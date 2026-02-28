@@ -1,37 +1,22 @@
-# NATS JWT Provider
-
-A Terraform provider for managing [NATS](https://nats.io/) JWT credentials offline — no running NATS server required.
-
-This provider is a Terraform-native replacement for the [`nsc`](https://github.com/nats-io/nsc) command-line tool, enabling you to manage operators, accounts, users, and server configuration as code.
-
-## ⚠️ Warning ⚠️
-
-Entire thing was vibe-coded. Use at your own risk.
-
-## Features
-
-- **Offline operation** — generates NKeys and signed JWTs without connecting to a NATS server
-- **Deterministic JWTs** — same inputs always produce the same JWT output (stable `terraform plan`)
-- **Full JWT support** — operators, accounts (with JetStream limits), system accounts, and users
-- **Server config generation** — produces NATS server configuration with memory resolver
-- **Seed validation** — validates that the correct key type is used for each operation
-- **External seed support** — use NKeys from external sources (e.g., HashiCorp Vault) or generate them with the provider
-
-## Example Usage
-
-```terraform
 terraform {
   required_providers {
     natsjwt = {
       source  = "m3nowak/natsjwt"
       version = "~> 0.0"
     }
+    local = {
+      source  = "hashicorp/local"
+      version = "2.7.0"
+    }
   }
 }
 
 provider "natsjwt" {}
 
-# Generate NKeys
+provider "local" {
+
+}
+
 resource "natsjwt_nkey" "operator" {
   type = "operator"
 }
@@ -45,6 +30,10 @@ resource "natsjwt_nkey" "app_account" {
 }
 
 resource "natsjwt_nkey" "app_user" {
+  type = "user"
+}
+
+resource "natsjwt_nkey" "app_user2" {
   type = "user"
 }
 
@@ -83,6 +72,18 @@ data "natsjwt_user" "app_user" {
   account_seed = natsjwt_nkey.app_account.seed
 
   permissions = {
+    pub_allow = [">"]
+    sub_allow = [">"]
+  }
+}
+
+# User with permissions
+data "natsjwt_user" "app_user2" {
+  name         = "app-user2"
+  seed         = natsjwt_nkey.app_user2.seed
+  account_seed = natsjwt_nkey.app_account.seed
+
+  permissions = {
     pub_allow = ["app.>"]
     sub_allow = ["app.>", "_INBOX.>"]
   }
@@ -96,27 +97,40 @@ data "natsjwt_config_helper" "server" {
 }
 
 output "server_config" {
-  value = data.natsjwt_config_helper.server.server_config
+  value = data.natsjwt_config_helper.server.operator
 }
 
-output "user_creds" {
-  value     = data.natsjwt_user.app_user.creds
-  sensitive = true
+resource "local_file" "user_creds" {
+  filename = "${path.module}/app-user.creds"
+  content  = data.natsjwt_user.app_user.creds
 }
-```
 
-## Security Notes
+resource "local_file" "user2_creds" {
+  filename = "${path.module}/app-user2.creds"
+  content  = data.natsjwt_user.app_user2.creds
+}
 
-- **Seeds are sensitive** — they are stored in Terraform state and marked as sensitive
-- **State should be encrypted** — use remote state backends with encryption
-- Consider using external seed management for production setups
+resource "local_file" "nats_config" {
+  filename = "${path.module}/nats-server.conf"
+  content  = <<-EOT
+# NATS Server Configuration
 
-## Compatibility
+server_name: "my-nats-server"
+port: 4222
+max_payload: 1MB
 
-- NATS 2.11 and 2.12
-- Terraform >= 1.0
-- Uses `github.com/nats-io/jwt/v2` and `github.com/nats-io/nkeys`
+jetstream {
+    store_dir: jetstream
+    max_file: 100G
+}
 
-## Demo
+${data.natsjwt_config_helper.server.server_config}
 
-The github repository contains a simple demo
+# Additional server configuration...
+websocket {
+  port: 8080
+  no_tls: true
+}
+
+EOT
+}
