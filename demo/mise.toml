@@ -1,0 +1,27 @@
+[env]
+TF_CLI_CONFIG_FILE = "./terraform.rc"
+NATS_URL = "nats://localhost:4222"
+NATS_CREDS = "./app-user.creds"
+
+[tools]
+"github:nats-io/nats-server" = "2.12"
+"github:nats-io/natscli" = "0.3"
+
+
+[tasks.build-parent]
+run = "mise r --cd .. build"
+
+[tasks.tf-init]
+run = "terraform init"
+depends = "build-parent"
+
+[tasks.tf-apply]
+run = "terraform apply -auto-approve"
+depends = "tf-init"
+
+[tasks.run-server]
+run = "nats-server -c ./nats-server.conf"
+depends = "tf-apply"
+
+[tasks.verify-server-config]
+run = "nats-server -c ./nats-server.conf -t"

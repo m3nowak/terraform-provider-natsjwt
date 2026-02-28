@@ -116,3 +116,7 @@ output "user_creds" {
 - NATS 2.11 and 2.12
 - Terraform >= 1.0
 - Uses `github.com/nats-io/jwt/v2` and `github.com/nats-io/nkeys`
+
+## Demo
+
+The github repository contains a simple demo in `demo` folder. You can experiment with the provider in it.
