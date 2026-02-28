@@ -2,3 +2,28 @@
 go = "1"
 nsc = "2"
 terraform = "1.14"
+
+[tasks.build]
+description = "Build the provider"
+run = "go build -o terraform-provider-natsjwt"
+
+[tasks.install]
+description = "Install the provider locally"
+run = "go install ."
+
+[tasks.test]
+description = "Run unit tests"
+run = "go test ./... -v"
+
+[tasks.testacc]
+description = "Run acceptance tests"
+env = { TF_ACC = "1" }
+run = "go test ./... -v -timeout 120s"
+
+[tasks.lint]
+description = "Run linter"
+run = "go vet ./..."
+
+[tasks.generate]
+description = "Generate documentation"
+run = "go generate ./..."
