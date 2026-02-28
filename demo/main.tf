@@ -13,9 +13,7 @@ terraform {
 
 provider "natsjwt" {}
 
-provider "local" {
-
-}
+provider "local" {}
 
 resource "natsjwt_nkey" "operator" {
   type = "operator"
