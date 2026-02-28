@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	natsjwt "github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nkeys"
 )
@@ -42,7 +43,9 @@ data "natsjwt_user" "test" {
 				Config: config,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("data.natsjwt_user.test", "jwt"),
+					resource.TestCheckResourceAttrSet("data.natsjwt_user.test", "creds"),
 					resource.TestMatchResourceAttr("data.natsjwt_user.test", "public_key", regexp.MustCompile(`^U`)),
+					testCheckUserCredsConsistency("data.natsjwt_user.test", userSeed),
 				),
 			},
 		},
@@ -233,4 +236,45 @@ data "natsjwt_user" "test" {
 			},
 		},
 	})
+}
+
+func testCheckUserCredsConsistency(resourceName, expectedSeed string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("not found: %s", resourceName)
+		}
+		creds := rs.Primary.Attributes["creds"]
+		if creds == "" {
+			return fmt.Errorf("creds attribute is empty")
+		}
+
+		parsedJWT, err := natsjwt.ParseDecoratedJWT([]byte(creds))
+		if err != nil {
+			return fmt.Errorf("failed to parse decorated JWT from creds: %w", err)
+		}
+		if parsedJWT != rs.Primary.Attributes["jwt"] {
+			return fmt.Errorf("creds JWT does not match jwt attribute")
+		}
+
+		kp, err := natsjwt.ParseDecoratedUserNKey([]byte(creds))
+		if err != nil {
+			return fmt.Errorf("failed to parse decorated user nkey from creds: %w", err)
+		}
+		seed, err := kp.Seed()
+		if err != nil {
+			return fmt.Errorf("failed to read seed from creds: %w", err)
+		}
+		if string(seed) != expectedSeed {
+			return fmt.Errorf("creds seed mismatch")
+		}
+		publicKey, err := kp.PublicKey()
+		if err != nil {
+			return fmt.Errorf("failed to read public key from creds seed: %w", err)
+		}
+		if publicKey != rs.Primary.Attributes["public_key"] {
+			return fmt.Errorf("creds seed public key mismatch")
+		}
+		return nil
+	}
 }

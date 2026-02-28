@@ -98,6 +98,11 @@ data "natsjwt_config_helper" "server" {
 output "server_config" {
   value = data.natsjwt_config_helper.server.server_config
 }
+
+output "user_creds" {
+  value     = data.natsjwt_user.app_user.creds
+  sensitive = true
+}
 ```
 
 ## Security Notes
