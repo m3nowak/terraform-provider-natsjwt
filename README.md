@@ -4,6 +4,10 @@ A Terraform provider for managing [NATS](https://nats.io/) JWT credentials offli
 
 This provider is a Terraform-native replacement for the [`nsc`](https://github.com/nats-io/nsc) command-line tool, enabling you to manage operators, accounts, users, and server configuration as code.
 
+## ⚠️ Warning ⚠️
+
+Entire thing was vibe-coded. Use at your own risk.
+
 ## Features
 
 - **Offline operation** — generates NKeys and signed JWTs without connecting to a NATS server
@@ -104,12 +108,12 @@ output "server_config" {
 
 Generates an NKey pair (seed + public key).
 
-| Attribute    | Type        | Description |
-|-------------|-------------|-------------|
-| `type`      | Required    | Key type: `operator`, `account`, or `user` |
-| `keepers`   | Optional    | Map of values that trigger recreation when changed |
-| `seed`      | Computed    | Generated seed (sensitive) |
-| `public_key`| Computed    | Generated public key |
+| Attribute    | Type     | Description                                        |
+| ------------ | -------- | -------------------------------------------------- |
+| `type`       | Required | Key type: `operator`, `account`, or `user`         |
+| `keepers`    | Optional | Map of values that trigger recreation when changed |
+| `seed`       | Computed | Generated seed (sensitive)                         |
+| `public_key` | Computed | Generated public key                               |
 
 ## Data Sources
 
@@ -117,72 +121,72 @@ Generates an NKey pair (seed + public key).
 
 Generates a signed operator JWT.
 
-| Attribute                  | Type     | Description |
-|---------------------------|----------|-------------|
-| `name`                    | Required | Operator name |
-| `seed`                    | Required | Operator seed (sensitive) |
-| `signing_keys`            | Optional | Additional signing key public keys |
-| `account_server_url`      | Optional | Account server URL |
-| `operator_service_urls`   | Optional | Operator service URLs |
-| `system_account`          | Optional | System account public key |
-| `strict_signing_key_usage`| Optional | Require signing keys |
-| `tags`                    | Optional | Tags |
-| `public_key`              | Computed | Operator public key |
-| `jwt`                     | Computed | Signed operator JWT |
+| Attribute                  | Type     | Description                        |
+| -------------------------- | -------- | ---------------------------------- |
+| `name`                     | Required | Operator name                      |
+| `seed`                     | Required | Operator seed (sensitive)          |
+| `signing_keys`             | Optional | Additional signing key public keys |
+| `account_server_url`       | Optional | Account server URL                 |
+| `operator_service_urls`    | Optional | Operator service URLs              |
+| `system_account`           | Optional | System account public key          |
+| `strict_signing_key_usage` | Optional | Require signing keys               |
+| `tags`                     | Optional | Tags                               |
+| `public_key`               | Computed | Operator public key                |
+| `jwt`                      | Computed | Signed operator JWT                |
 
 ### `natsjwt_account` / `natsjwt_system_account`
 
 Generates a signed account JWT. The `system_account` variant includes default `$SYS` exports.
 
-| Attribute             | Type     | Description |
-|----------------------|----------|-------------|
-| `name`               | Required | Account name |
-| `seed`               | Required | Account seed (sensitive) |
-| `operator_seed`      | Required | Operator seed for signing (sensitive) |
-| `signing_keys`       | Optional | Signing key public keys |
-| `nats_limits`        | Optional | Connection limits (subs, data, payload) |
-| `account_limits`     | Optional | Account limits (imports, exports, connections) |
-| `jetstream_limits`   | Optional | JetStream limits (global or tiered) |
-| `default_permissions`| Optional | Default user permissions |
-| `trace`              | Optional | Message trace config |
-| `public_key`         | Computed | Account public key |
-| `jwt`                | Computed | Signed account JWT |
+| Attribute             | Type     | Description                                    |
+| --------------------- | -------- | ---------------------------------------------- |
+| `name`                | Required | Account name                                   |
+| `seed`                | Required | Account seed (sensitive)                       |
+| `operator_seed`       | Required | Operator seed for signing (sensitive)          |
+| `signing_keys`        | Optional | Signing key public keys                        |
+| `nats_limits`         | Optional | Connection limits (subs, data, payload)        |
+| `account_limits`      | Optional | Account limits (imports, exports, connections) |
+| `jetstream_limits`    | Optional | JetStream limits (global or tiered)            |
+| `default_permissions` | Optional | Default user permissions                       |
+| `trace`               | Optional | Message trace config                           |
+| `public_key`          | Computed | Account public key                             |
+| `jwt`                 | Computed | Signed account JWT                             |
 
 ### `natsjwt_user`
 
 Generates a signed user JWT.
 
-| Attribute                  | Type     | Description |
-|---------------------------|----------|-------------|
-| `name`                    | Required | User name |
-| `seed`                    | Required | User seed (sensitive) |
-| `account_seed`            | Required | Account seed for signing (sensitive) |
-| `issuer_account`          | Optional | Account public key (when using signing key) |
-| `permissions`             | Optional | Pub/sub permissions |
-| `limits`                  | Optional | Connection limits |
-| `bearer_token`            | Optional | Allow bearer tokens |
-| `allowed_connection_types`| Optional | STANDARD, WEBSOCKET, LEAFNODE, MQTT |
-| `source_networks`         | Optional | Allowed CIDRs |
-| `time_restrictions`       | Optional | Time-based access |
-| `locale`                  | Optional | Timezone for time restrictions |
-| `public_key`              | Computed | User public key |
-| `jwt`                     | Computed | Signed user JWT |
+| Attribute                  | Type     | Description                                 |
+| -------------------------- | -------- | ------------------------------------------- |
+| `name`                     | Required | User name                                   |
+| `seed`                     | Required | User seed (sensitive)                       |
+| `account_seed`             | Required | Account seed for signing (sensitive)        |
+| `issuer_account`           | Optional | Account public key (when using signing key) |
+| `permissions`              | Optional | Pub/sub permissions                         |
+| `limits`                   | Optional | Connection limits                           |
+| `bearer_token`             | Optional | Allow bearer tokens                         |
+| `allowed_connection_types` | Optional | STANDARD, WEBSOCKET, LEAFNODE, MQTT         |
+| `source_networks`          | Optional | Allowed CIDRs                               |
+| `time_restrictions`        | Optional | Time-based access                           |
+| `locale`                   | Optional | Timezone for time restrictions              |
+| `public_key`               | Computed | User public key                             |
+| `jwt`                      | Computed | Signed user JWT                             |
 
 ### `natsjwt_config_helper`
 
 Generates NATS server configuration for memory resolver.
 
-| Attribute            | Type     | Description |
-|---------------------|----------|-------------|
-| `operator_jwt`      | Required | Operator JWT |
-| `account_jwts`      | Optional | Account JWTs |
-| `system_account_jwt`| Optional | System account JWT |
-| `resolver_type`     | Optional | Only `MEMORY` supported |
-| `server_config`     | Computed | Complete config snippet |
-| `operator`          | Computed | Operator JWT value |
-| `system_account`    | Computed | System account public key |
-| `resolver`          | Computed | Resolver type |
-| `resolver_preload`  | Computed | Account pubkey → JWT map |
+| Attribute            | Type     | Description               |
+| -------------------- | -------- | ------------------------- |
+| `operator_jwt`       | Required | Operator JWT              |
+| `account_jwts`       | Optional | Account JWTs              |
+| `system_account_jwt` | Optional | System account JWT        |
+| `resolver_type`      | Optional | Only `MEMORY` supported   |
+| `server_config`      | Computed | Complete config snippet   |
+| `operator`           | Computed | Operator JWT value        |
+| `system_account`     | Computed | System account public key |
+| `resolver`           | Computed | Resolver type             |
+| `resolver_preload`   | Computed | Account pubkey → JWT map  |
 
 ## Security Notes
 
