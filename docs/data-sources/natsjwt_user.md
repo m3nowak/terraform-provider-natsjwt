@@ -110,6 +110,7 @@ data "natsjwt_user" "restricted_network" {
 
 - `public_key` - The user public key (starts with `U`).
 - `jwt` - The signed user JWT (sensitive).
+- `creds` - Full decorated NATS user credentials content (`.creds` format, includes JWT and user seed; sensitive).
 
 ## Notes
 

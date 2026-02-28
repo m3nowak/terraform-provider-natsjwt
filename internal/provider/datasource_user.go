@@ -52,6 +52,7 @@ type UserDataSourceModel struct {
 	Tags                   types.List   `tfsdk:"tags"`
 	PublicKey              types.String `tfsdk:"public_key"`
 	JWT                    types.String `tfsdk:"jwt"`
+	Creds                  types.String `tfsdk:"creds"`
 }
 
 func NewUserDataSource() datasource.DataSource {
@@ -184,6 +185,11 @@ func (d *UserDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r
 			"jwt": schema.StringAttribute{
 				Computed:    true,
 				Description: "The signed user JWT.",
+			},
+			"creds": schema.StringAttribute{
+				Computed:    true,
+				Sensitive:   true,
+				Description: "NATS user credentials file content (decorated JWT + decorated seed).",
 			},
 		},
 	}
@@ -349,8 +355,14 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		resp.Diagnostics.AddError("JWT Encoding Error", fmt.Sprintf("Failed to encode user JWT: %s", err))
 		return
 	}
+	credsBytes, err := natsjwt.FormatUserConfig(jwtString, []byte(data.Seed.ValueString()))
+	if err != nil {
+		resp.Diagnostics.AddError("Credentials Encoding Error", fmt.Sprintf("Failed to encode user credentials: %s", err))
+		return
+	}
 
 	data.PublicKey = types.StringValue(userPub)
 	data.JWT = types.StringValue(jwtString)
+	data.Creds = types.StringValue(string(credsBytes))
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

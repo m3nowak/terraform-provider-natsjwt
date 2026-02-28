@@ -91,6 +91,7 @@ data "natsjwt_config_helper" "server" {
 
 					// User JWT
 					resource.TestCheckResourceAttrSet("data.natsjwt_user.app_user", "jwt"),
+					resource.TestCheckResourceAttrSet("data.natsjwt_user.app_user", "creds"),
 
 					// Config helper
 					resource.TestCheckResourceAttrSet("data.natsjwt_config_helper.server", "server_config"),
@@ -195,6 +196,7 @@ data "natsjwt_user" "ext" {
 					resource.TestCheckResourceAttrSet("data.natsjwt_operator.ext", "jwt"),
 					resource.TestCheckResourceAttrSet("data.natsjwt_account.ext", "jwt"),
 					resource.TestCheckResourceAttrSet("data.natsjwt_user.ext", "jwt"),
+					resource.TestCheckResourceAttrSet("data.natsjwt_user.ext", "creds"),
 				),
 			},
 		},

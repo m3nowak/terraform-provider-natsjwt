@@ -86,6 +86,12 @@ output "user_jwt" {
   sensitive   = true
 }
 
+output "user_creds" {
+  value       = data.natsjwt_user.app_user.creds
+  description = "User credentials file content for app-user"
+  sensitive   = true
+}
+
 output "user_seed" {
   value       = natsjwt_nkey.app_user.seed
   description = "User seed for app-user"
