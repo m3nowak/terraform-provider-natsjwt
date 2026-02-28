@@ -119,4 +119,4 @@ output "user_creds" {
 
 ## Demo
 
-The github repository contains a simple demo
+The github repository contains a simple demo in `demo` folder. You can experiment with the provider in it.
