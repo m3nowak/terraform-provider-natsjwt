@@ -21,11 +21,11 @@ func (f *seedPublicKeyFunction) Metadata(_ context.Context, _ function.MetadataR
 
 func (f *seedPublicKeyFunction) Definition(_ context.Context, _ function.DefinitionRequest, resp *function.DefinitionResponse) {
 	resp.Definition = function.Definition{
-		Summary: "Converts an NATS NKey seed into its corresponding public key.",
+		Summary: "Converts a valid NATS NKey seed into its corresponding public key.",
 		Parameters: []function.Parameter{
 			function.StringParameter{
 				Name:        "seed",
-				Description: "NATS seed (SO..., SA..., or SU...) to convert.",
+				Description: "NATS NKey seed to convert to a public key.",
 			},
 		},
 		Return: function.StringReturn{},
