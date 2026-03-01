@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	natsjwt "github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nkeys"
@@ -12,13 +13,16 @@ import (
 
 var objectAsOptions = basetypes.ObjectAsOptions{}
 
-// encodeDeterministic encodes claims with IssuedAt=0 and empty ID for deterministic output.
-// The standard jwt library always sets IssuedAt to current time, so we encode,
-// then decode, patch fields, re-serialize and re-sign.
+// encodeDeterministic encodes claims with stable deterministic fields.
+// The standard jwt library always sets IssuedAt to the current time, so instead
+// we build the JWT manually: adjust the claim fields we care about, perform a
+// trial Encode to trigger internal updates (specifically updateVersion), then
+// marshal the header and payload ourselves and sign the result for a
+// deterministic token.
 func encodeDeterministic(claims natsjwt.Claims, kp nkeys.KeyPair) (string, error) {
 	// First, do a normal encode to get a valid JWT structure
 	cd := claims.Claims()
-	cd.IssuedAt = 0
+	issuedAt := cd.IssuedAt
 	cd.ID = ""
 
 	// We need to manually construct the JWT with deterministic fields.
@@ -41,10 +45,12 @@ func encodeDeterministic(claims natsjwt.Claims, kp nkeys.KeyPair) (string, error
 	cd.Issuer = pub
 
 	// Ensure updateVersion is called by doing a trial encode first
-	claims.Encode(kp)
+	if _, err := claims.Encode(kp); err != nil {
+		return "", fmt.Errorf("failed to run trial encode: %w", err)
+	}
 
 	// Now reset deterministic fields
-	cd.IssuedAt = 0
+	cd.IssuedAt = issuedAt
 	cd.ID = ""
 
 	// Serialize payload
@@ -121,4 +127,23 @@ func buildPermission(allow, deny []string) natsjwt.Permission {
 		p.Deny = natsjwt.StringList(deny)
 	}
 	return p
+}
+
+// applyTemporalClaimsDefaults maps Terraform temporal attributes to JWT claims.
+// Defaults are: IssuedAt=0 (Unix epoch), Expires unset (no expiration),
+// and NotBefore=IssuedAt when not provided explicitly.
+func applyTemporalClaimsDefaults(cd *natsjwt.ClaimsData, issuedAt, expires, notBefore types.Int64) {
+	if !issuedAt.IsNull() {
+		cd.IssuedAt = issuedAt.ValueInt64()
+	} else {
+		cd.IssuedAt = 0
+	}
+	if !expires.IsNull() {
+		cd.Expires = expires.ValueInt64()
+	}
+	if !notBefore.IsNull() {
+		cd.NotBefore = notBefore.ValueInt64()
+	} else {
+		cd.NotBefore = cd.IssuedAt
+	}
 }

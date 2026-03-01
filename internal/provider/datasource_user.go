@@ -42,6 +42,9 @@ type UserDataSourceModel struct {
 	Seed                   types.String `tfsdk:"seed"`
 	AccountSeed            types.String `tfsdk:"account_seed"`
 	IssuerAccount          types.String `tfsdk:"issuer_account"`
+	IssuedAt               types.Int64  `tfsdk:"issued_at"`
+	Expires                types.Int64  `tfsdk:"expires"`
+	NotBefore              types.Int64  `tfsdk:"not_before"`
 	Permissions            types.Object `tfsdk:"permissions"`
 	Limits                 types.Object `tfsdk:"limits"`
 	BearerToken            types.Bool   `tfsdk:"bearer_token"`
@@ -86,6 +89,18 @@ func (d *UserDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r
 			"issuer_account": schema.StringAttribute{
 				Optional:    true,
 				Description: "Account public key. Set this when using a signing key instead of the account key directly.",
+			},
+			"issued_at": schema.Int64Attribute{
+				Optional:    true,
+				Description: "JWT issued-at timestamp as Unix seconds. Defaults to 0 (Unix epoch).",
+			},
+			"expires": schema.Int64Attribute{
+				Optional:    true,
+				Description: "JWT expiration timestamp as Unix seconds. Defaults to no expiration.",
+			},
+			"not_before": schema.Int64Attribute{
+				Optional:    true,
+				Description: "JWT not-before timestamp as Unix seconds. Defaults to issued_at.",
 			},
 			"permissions": schema.SingleNestedAttribute{
 				Optional:    true,
@@ -222,6 +237,7 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 
 	claims := natsjwt.NewUserClaims(userPub)
 	claims.Name = data.Name.ValueString()
+	applyTemporalClaimsDefaults(claims.Claims(), data.IssuedAt, data.Expires, data.NotBefore)
 
 	if !data.IssuerAccount.IsNull() {
 		claims.IssuerAccount = data.IssuerAccount.ValueString()

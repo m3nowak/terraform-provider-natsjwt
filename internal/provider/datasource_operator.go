@@ -17,16 +17,19 @@ var _ datasource.DataSource = &OperatorDataSource{}
 type OperatorDataSource struct{}
 
 type OperatorDataSourceModel struct {
-	Name                 types.String `tfsdk:"name"`
-	Seed                 types.String `tfsdk:"seed"`
-	SigningKeys          types.List   `tfsdk:"signing_keys"`
-	AccountServerURL     types.String `tfsdk:"account_server_url"`
-	OperatorServiceURLs  types.List   `tfsdk:"operator_service_urls"`
-	SystemAccount        types.String `tfsdk:"system_account"`
+	Name                  types.String `tfsdk:"name"`
+	Seed                  types.String `tfsdk:"seed"`
+	SigningKeys           types.List   `tfsdk:"signing_keys"`
+	AccountServerURL      types.String `tfsdk:"account_server_url"`
+	OperatorServiceURLs   types.List   `tfsdk:"operator_service_urls"`
+	SystemAccount         types.String `tfsdk:"system_account"`
 	StrictSigningKeyUsage types.Bool   `tfsdk:"strict_signing_key_usage"`
-	Tags                 types.List   `tfsdk:"tags"`
-	PublicKey            types.String `tfsdk:"public_key"`
-	JWT                  types.String `tfsdk:"jwt"`
+	IssuedAt              types.Int64  `tfsdk:"issued_at"`
+	Expires               types.Int64  `tfsdk:"expires"`
+	NotBefore             types.Int64  `tfsdk:"not_before"`
+	Tags                  types.List   `tfsdk:"tags"`
+	PublicKey             types.String `tfsdk:"public_key"`
+	JWT                   types.String `tfsdk:"jwt"`
 }
 
 func NewOperatorDataSource() datasource.DataSource {
@@ -72,6 +75,18 @@ func (d *OperatorDataSource) Schema(_ context.Context, _ datasource.SchemaReques
 			"strict_signing_key_usage": schema.BoolAttribute{
 				Optional:    true,
 				Description: "Require signing keys for all operations.",
+			},
+			"issued_at": schema.Int64Attribute{
+				Optional:    true,
+				Description: "JWT issued-at timestamp as Unix seconds. Defaults to 0 (Unix epoch).",
+			},
+			"expires": schema.Int64Attribute{
+				Optional:    true,
+				Description: "JWT expiration timestamp as Unix seconds. Defaults to no expiration.",
+			},
+			"not_before": schema.Int64Attribute{
+				Optional:    true,
+				Description: "JWT not-before timestamp as Unix seconds. Defaults to issued_at.",
 			},
 			"tags": schema.ListAttribute{
 				ElementType: types.StringType,
@@ -143,6 +158,7 @@ func (d *OperatorDataSource) Read(ctx context.Context, req datasource.ReadReques
 	if !data.StrictSigningKeyUsage.IsNull() {
 		claims.StrictSigningKeyUsage = data.StrictSigningKeyUsage.ValueBool()
 	}
+	applyTemporalClaimsDefaults(claims.Claims(), data.IssuedAt, data.Expires, data.NotBefore)
 
 	if !data.Tags.IsNull() {
 		var tags []string

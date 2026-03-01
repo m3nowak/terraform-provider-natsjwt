@@ -43,6 +43,22 @@ data "natsjwt_account" "test" {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("data.natsjwt_account.test", "jwt"),
 					resource.TestMatchResourceAttr("data.natsjwt_account.test", "public_key", regexp.MustCompile(`^A`)),
+					testCheckJWTField("data.natsjwt_account.test", func(jwtStr string) error {
+						claims, err := natsjwt.DecodeAccountClaims(jwtStr)
+						if err != nil {
+							return fmt.Errorf("failed to decode account JWT: %w", err)
+						}
+						if claims.IssuedAt != 0 {
+							return fmt.Errorf("expected default issued_at 0, got %d", claims.IssuedAt)
+						}
+						if claims.Expires != 0 {
+							return fmt.Errorf("expected default expires 0, got %d", claims.Expires)
+						}
+						if claims.NotBefore != 0 {
+							return fmt.Errorf("expected default not_before 0, got %d", claims.NotBefore)
+						}
+						return nil
+					}),
 				),
 			},
 		},
@@ -165,6 +181,8 @@ data "natsjwt_account" "test" {
   name          = "perm-acct"
   seed          = %q
   operator_seed = %q
+  issued_at     = 123
+  expires       = 456
   default_permissions = {
     pub_allow = ["orders.>"]
     pub_deny  = ["admin.>"]
@@ -189,6 +207,15 @@ data "natsjwt_account" "test" {
 						}
 						if len(claims.DefaultPermissions.Pub.Deny) != 1 || claims.DefaultPermissions.Pub.Deny[0] != "admin.>" {
 							return fmt.Errorf("pub_deny mismatch: %v", claims.DefaultPermissions.Pub.Deny)
+						}
+						if claims.IssuedAt != 123 {
+							return fmt.Errorf("expected issued_at 123, got %d", claims.IssuedAt)
+						}
+						if claims.Expires != 456 {
+							return fmt.Errorf("expected expires 456, got %d", claims.Expires)
+						}
+						if claims.NotBefore != 123 {
+							return fmt.Errorf("expected not_before to default to issued_at (123), got %d", claims.NotBefore)
 						}
 						return nil
 					}),
