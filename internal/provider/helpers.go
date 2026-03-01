@@ -129,6 +129,9 @@ func buildPermission(allow, deny []string) natsjwt.Permission {
 	return p
 }
 
+// applyTemporalClaimsDefaults maps Terraform temporal attributes to JWT claims.
+// Defaults are: IssuedAt=0 (Unix epoch), Expires unset (no expiration),
+// and NotBefore=IssuedAt when not provided explicitly.
 func applyTemporalClaimsDefaults(cd *natsjwt.ClaimsData, issuedAt, expires, notBefore types.Int64) {
 	if !issuedAt.IsNull() {
 		cd.IssuedAt = issuedAt.ValueInt64()
