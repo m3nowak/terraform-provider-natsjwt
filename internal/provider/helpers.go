@@ -13,8 +13,10 @@ import (
 var objectAsOptions = basetypes.ObjectAsOptions{}
 
 // encodeDeterministic encodes claims with stable deterministic fields.
-// The standard jwt library always sets IssuedAt to current time, so we encode,
-// then decode, patch fields, re-serialize and re-sign.
+// The standard jwt library always sets IssuedAt to the current time, so instead
+// we build the JWT manually: adjust the claim fields we care about, perform a
+// trial Encode to trigger internal updates (e.g. version), then marshal the
+// header and payload ourselves and sign the result for a deterministic token.
 func encodeDeterministic(claims natsjwt.Claims, kp nkeys.KeyPair) (string, error) {
 	// First, do a normal encode to get a valid JWT structure
 	cd := claims.Claims()
