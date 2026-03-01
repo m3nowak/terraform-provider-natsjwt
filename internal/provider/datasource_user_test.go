@@ -46,6 +46,22 @@ data "natsjwt_user" "test" {
 					resource.TestCheckResourceAttrSet("data.natsjwt_user.test", "creds"),
 					resource.TestMatchResourceAttr("data.natsjwt_user.test", "public_key", regexp.MustCompile(`^U`)),
 					testCheckUserCredsConsistency("data.natsjwt_user.test", userSeed),
+					testCheckJWTField("data.natsjwt_user.test", func(jwtStr string) error {
+						claims, err := natsjwt.DecodeUserClaims(jwtStr)
+						if err != nil {
+							return fmt.Errorf("failed to decode user JWT: %w", err)
+						}
+						if claims.IssuedAt != 0 {
+							return fmt.Errorf("expected default issued_at 0, got %d", claims.IssuedAt)
+						}
+						if claims.Expires != 0 {
+							return fmt.Errorf("expected default expires 0, got %d", claims.Expires)
+						}
+						if claims.NotBefore != 0 {
+							return fmt.Errorf("expected default not_before 0, got %d", claims.NotBefore)
+						}
+						return nil
+					}),
 				),
 			},
 		},
@@ -145,6 +161,9 @@ data "natsjwt_user" "test" {
   name         = "time-user"
   seed         = %q
   account_seed = %q
+  issued_at    = 10
+  not_before   = 15
+  expires      = 20
   time_restrictions = [{
     start = "08:00:00"
     end   = "17:00:00"
@@ -172,6 +191,15 @@ data "natsjwt_user" "test" {
 						}
 						if claims.Locale != "America/New_York" {
 							return fmt.Errorf("expected locale America/New_York, got %q", claims.Locale)
+						}
+						if claims.IssuedAt != 10 {
+							return fmt.Errorf("expected issued_at 10, got %d", claims.IssuedAt)
+						}
+						if claims.NotBefore != 15 {
+							return fmt.Errorf("expected not_before 15, got %d", claims.NotBefore)
+						}
+						if claims.Expires != 20 {
+							return fmt.Errorf("expected expires 20, got %d", claims.Expires)
 						}
 						return nil
 					}),

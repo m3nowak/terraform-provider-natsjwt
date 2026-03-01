@@ -25,6 +25,9 @@ data "natsjwt_operator" "main" {
 - `seed` - (Required, sensitive) Account seed (private key).
 - `operator_seed` - (Required, sensitive) Operator seed for signing.
 - `signing_keys` - (Optional) List of signing key public keys.
+- `issued_at` - (Optional) JWT issued-at Unix timestamp. Defaults to `0` (Unix epoch).
+- `expires` - (Optional) JWT expiration Unix timestamp. Defaults to no expiration.
+- `not_before` - (Optional) JWT not-before Unix timestamp. Defaults to `issued_at`.
 - `nats_limits` - (Optional) Connection limits. See [NATS Limits](#nats-limits-1) below.
 - `account_limits` - (Optional) Account limits. See [Account Limits](#account-limits-1) below.
 - `jetstream_limits` - (Optional) JetStream limits. See [JetStream Limits](#jetstream-limits-1) below.

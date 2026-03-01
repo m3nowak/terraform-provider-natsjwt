@@ -72,6 +72,14 @@ data "natsjwt_user" "restricted_network" {
     "192.168.0.0/16"
   ]
 }
+
+# User with an already expired JWT (demonstration)
+data "natsjwt_user" "expired_demo" {
+  name         = "expired-user"
+  seed         = natsjwt_nkey.app_user.seed
+  account_seed = natsjwt_nkey.app_account.seed
+  expires      = 1
+}
 ```
 
 ## Argument Reference
@@ -80,6 +88,9 @@ data "natsjwt_user" "restricted_network" {
 - `seed` - (Required, sensitive) User seed (private key).
 - `account_seed` - (Required, sensitive) Account seed for signing.
 - `issuer_account` - (Optional) Account public key (when using a signing key).
+- `issued_at` - (Optional) JWT issued-at Unix timestamp. Defaults to `0` (Unix epoch).
+- `expires` - (Optional) JWT expiration Unix timestamp. Defaults to no expiration.
+- `not_before` - (Optional) JWT not-before Unix timestamp. Defaults to `issued_at`.
 - `permissions` - (Optional) Pub/sub permissions. See [Permissions](#permissions-1) below.
 - `limits` - (Optional) Connection limits. See [Limits](#limits-1) below.
 - `bearer_token` - (Optional) Allow bearer tokens.

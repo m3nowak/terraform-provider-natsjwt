@@ -29,6 +29,22 @@ data "natsjwt_system_account" "test" {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("data.natsjwt_system_account.test", "jwt"),
 					resource.TestMatchResourceAttr("data.natsjwt_system_account.test", "public_key", regexp.MustCompile(`^A`)),
+					testCheckJWTField("data.natsjwt_system_account.test", func(jwtStr string) error {
+						claims, err := natsjwt.DecodeAccountClaims(jwtStr)
+						if err != nil {
+							return fmt.Errorf("failed to decode system account JWT: %w", err)
+						}
+						if claims.IssuedAt != 0 {
+							return fmt.Errorf("expected default issued_at 0, got %d", claims.IssuedAt)
+						}
+						if claims.Expires != 0 {
+							return fmt.Errorf("expected default expires 0, got %d", claims.Expires)
+						}
+						if claims.NotBefore != 0 {
+							return fmt.Errorf("expected default not_before 0, got %d", claims.NotBefore)
+						}
+						return nil
+					}),
 				),
 			},
 		},
@@ -94,6 +110,8 @@ data "natsjwt_system_account" "test" {
   name          = "SYS"
   seed          = %q
   operator_seed = %q
+  issued_at     = 321
+  expires       = 654
   tags          = ["system"]
 }
 `, acctSeed, opSeed)
@@ -111,6 +129,15 @@ data "natsjwt_system_account" "test" {
 						}
 						if len(claims.Tags) != 1 || claims.Tags[0] != "system" {
 							return fmt.Errorf("expected tags [system], got %v", claims.Tags)
+						}
+						if claims.IssuedAt != 321 {
+							return fmt.Errorf("expected issued_at 321, got %d", claims.IssuedAt)
+						}
+						if claims.Expires != 654 {
+							return fmt.Errorf("expected expires 654, got %d", claims.Expires)
+						}
+						if claims.NotBefore != 321 {
+							return fmt.Errorf("expected not_before to default to issued_at (321), got %d", claims.NotBefore)
 						}
 						return nil
 					}),

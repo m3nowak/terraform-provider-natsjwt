@@ -23,6 +23,10 @@ resource "natsjwt_nkey" "app_user" {
   type = "user"
 }
 
+resource "natsjwt_nkey" "expired_user" {
+  type = "user"
+}
+
 # Create system account (gets default $SYS.> exports)
 data "natsjwt_system_account" "sys" {
   name          = "SYS"
@@ -61,6 +65,14 @@ data "natsjwt_user" "app_user" {
     pub_allow = ["app.>"]
     sub_allow = ["app.>", "_INBOX.>"]
   }
+}
+
+# Demonstration user with an already expired JWT
+data "natsjwt_user" "expired_user" {
+  name         = "expired-user"
+  seed         = natsjwt_nkey.expired_user.seed
+  account_seed = natsjwt_nkey.app_account.seed
+  expires      = 1
 }
 
 # Generate NATS server config

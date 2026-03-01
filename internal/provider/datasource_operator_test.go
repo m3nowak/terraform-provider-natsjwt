@@ -73,6 +73,8 @@ data "natsjwt_operator" "test" {
   operator_service_urls   = ["nats://localhost:4222"]
   system_account          = %q
   strict_signing_key_usage = true
+  issued_at               = 100
+  expires                 = 200
   tags                    = ["env:test"]
 }
 `, seed, sigPub, sysPub)
@@ -100,6 +102,15 @@ data "natsjwt_operator" "test" {
 						}
 						if claims.SystemAccount != sysPub {
 							return fmt.Errorf("expected system_account %q, got %q", sysPub, claims.SystemAccount)
+						}
+						if claims.IssuedAt != 100 {
+							return fmt.Errorf("expected issued_at 100, got %d", claims.IssuedAt)
+						}
+						if claims.Expires != 200 {
+							return fmt.Errorf("expected expires 200, got %d", claims.Expires)
+						}
+						if claims.NotBefore != 100 {
+							return fmt.Errorf("expected not_before to default to issued_at (100), got %d", claims.NotBefore)
 						}
 						return nil
 					}),

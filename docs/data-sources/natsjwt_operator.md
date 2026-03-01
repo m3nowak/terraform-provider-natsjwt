@@ -48,6 +48,9 @@ data "natsjwt_operator" "signing_keys" {
 - `operator_service_urls` - (Optional) List of operator service URLs.
 - `system_account` - (Optional) System account public key.
 - `strict_signing_key_usage` - (Optional) If true, require signing keys to be used. Default is false.
+- `issued_at` - (Optional) JWT issued-at Unix timestamp. Defaults to `0` (Unix epoch).
+- `expires` - (Optional) JWT expiration Unix timestamp. Defaults to no expiration.
+- `not_before` - (Optional) JWT not-before Unix timestamp. Defaults to `issued_at`.
 - `tags` - (Optional) List of tags to associate with the operator.
 
 ## Attributes Reference

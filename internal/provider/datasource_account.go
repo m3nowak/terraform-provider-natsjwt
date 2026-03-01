@@ -25,12 +25,12 @@ type NatsLimitsModel struct {
 }
 
 type AccountLimitsModel struct {
-	Imports          types.Int64 `tfsdk:"imports"`
-	Exports          types.Int64 `tfsdk:"exports"`
-	WildcardExports  types.Bool  `tfsdk:"wildcard_exports"`
-	DisallowBearer   types.Bool  `tfsdk:"disallow_bearer"`
-	Conn             types.Int64 `tfsdk:"conn"`
-	LeafNodeConn     types.Int64 `tfsdk:"leaf_node_conn"`
+	Imports         types.Int64 `tfsdk:"imports"`
+	Exports         types.Int64 `tfsdk:"exports"`
+	WildcardExports types.Bool  `tfsdk:"wildcard_exports"`
+	DisallowBearer  types.Bool  `tfsdk:"disallow_bearer"`
+	Conn            types.Int64 `tfsdk:"conn"`
+	LeafNodeConn    types.Int64 `tfsdk:"leaf_node_conn"`
 }
 
 type JetStreamLimitsModel struct {
@@ -61,7 +61,10 @@ type AccountDataSourceModel struct {
 	Name               types.String `tfsdk:"name"`
 	Seed               types.String `tfsdk:"seed"`
 	OperatorSeed       types.String `tfsdk:"operator_seed"`
-	SigningKeys         types.List   `tfsdk:"signing_keys"`
+	SigningKeys        types.List   `tfsdk:"signing_keys"`
+	IssuedAt           types.Int64  `tfsdk:"issued_at"`
+	Expires            types.Int64  `tfsdk:"expires"`
+	NotBefore          types.Int64  `tfsdk:"not_before"`
 	Description        types.String `tfsdk:"description"`
 	InfoURL            types.String `tfsdk:"info_url"`
 	Tags               types.List   `tfsdk:"tags"`
@@ -115,6 +118,18 @@ func accountSchemaAttributes() map[string]schema.Attribute {
 			ElementType: types.StringType,
 			Optional:    true,
 			Description: "Additional signing key public keys for this account.",
+		},
+		"issued_at": schema.Int64Attribute{
+			Optional:    true,
+			Description: "JWT issued-at timestamp as Unix seconds. Defaults to 0 (Unix epoch).",
+		},
+		"expires": schema.Int64Attribute{
+			Optional:    true,
+			Description: "JWT expiration timestamp as Unix seconds. Defaults to no expiration.",
+		},
+		"not_before": schema.Int64Attribute{
+			Optional:    true,
+			Description: "JWT not-before timestamp as Unix seconds. Defaults to issued_at.",
 		},
 		"description": schema.StringAttribute{
 			Optional:    true,
@@ -317,6 +332,19 @@ func buildAccountClaims(ctx context.Context, data AccountDataSourceModel, resp *
 
 	claims := natsjwt.NewAccountClaims(pub)
 	claims.Name = data.Name.ValueString()
+	if !data.IssuedAt.IsNull() {
+		claims.IssuedAt = data.IssuedAt.ValueInt64()
+	} else {
+		claims.IssuedAt = 0
+	}
+	if !data.Expires.IsNull() {
+		claims.Expires = data.Expires.ValueInt64()
+	}
+	if !data.NotBefore.IsNull() {
+		claims.NotBefore = data.NotBefore.ValueInt64()
+	} else {
+		claims.NotBefore = claims.IssuedAt
+	}
 
 	if !data.SigningKeys.IsNull() {
 		var signingKeys []string
