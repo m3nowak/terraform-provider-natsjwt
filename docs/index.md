@@ -16,6 +16,7 @@ Entire thing was vibe-coded. Use at your own risk.
 - **Server config generation** — produces NATS server configuration with memory resolver
 - **Seed validation** — validates that the correct key type is used for each operation
 - **External seed support** — use NKeys from external sources (e.g., HashiCorp Vault) or generate them with the provider
+- **Seed conversion function** — convert a seed to a public key with `provider::natsjwt::seed_public_key(...)`
 
 ## Example Usage
 
