@@ -158,19 +158,7 @@ func (d *OperatorDataSource) Read(ctx context.Context, req datasource.ReadReques
 	if !data.StrictSigningKeyUsage.IsNull() {
 		claims.StrictSigningKeyUsage = data.StrictSigningKeyUsage.ValueBool()
 	}
-	if !data.IssuedAt.IsNull() {
-		claims.IssuedAt = data.IssuedAt.ValueInt64()
-	} else {
-		claims.IssuedAt = 0
-	}
-	if !data.Expires.IsNull() {
-		claims.Expires = data.Expires.ValueInt64()
-	}
-	if !data.NotBefore.IsNull() {
-		claims.NotBefore = data.NotBefore.ValueInt64()
-	} else {
-		claims.NotBefore = claims.IssuedAt
-	}
+	applyTemporalClaimsDefaults(claims.Claims(), data.IssuedAt, data.Expires, data.NotBefore)
 
 	if !data.Tags.IsNull() {
 		var tags []string

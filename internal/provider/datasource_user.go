@@ -237,19 +237,7 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 
 	claims := natsjwt.NewUserClaims(userPub)
 	claims.Name = data.Name.ValueString()
-	if !data.IssuedAt.IsNull() {
-		claims.IssuedAt = data.IssuedAt.ValueInt64()
-	} else {
-		claims.IssuedAt = 0
-	}
-	if !data.Expires.IsNull() {
-		claims.Expires = data.Expires.ValueInt64()
-	}
-	if !data.NotBefore.IsNull() {
-		claims.NotBefore = data.NotBefore.ValueInt64()
-	} else {
-		claims.NotBefore = claims.IssuedAt
-	}
+	applyTemporalClaimsDefaults(claims.Claims(), data.IssuedAt, data.Expires, data.NotBefore)
 
 	if !data.IssuerAccount.IsNull() {
 		claims.IssuerAccount = data.IssuerAccount.ValueString()

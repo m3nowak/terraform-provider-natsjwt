@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	natsjwt "github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nkeys"
@@ -15,8 +16,9 @@ var objectAsOptions = basetypes.ObjectAsOptions{}
 // encodeDeterministic encodes claims with stable deterministic fields.
 // The standard jwt library always sets IssuedAt to the current time, so instead
 // we build the JWT manually: adjust the claim fields we care about, perform a
-// trial Encode to trigger internal updates (e.g. version), then marshal the
-// header and payload ourselves and sign the result for a deterministic token.
+// trial Encode to trigger internal updates (specifically updateVersion), then
+// marshal the header and payload ourselves and sign the result for a
+// deterministic token.
 func encodeDeterministic(claims natsjwt.Claims, kp nkeys.KeyPair) (string, error) {
 	// First, do a normal encode to get a valid JWT structure
 	cd := claims.Claims()
@@ -43,7 +45,9 @@ func encodeDeterministic(claims natsjwt.Claims, kp nkeys.KeyPair) (string, error
 	cd.Issuer = pub
 
 	// Ensure updateVersion is called by doing a trial encode first
-	claims.Encode(kp)
+	if _, err := claims.Encode(kp); err != nil {
+		return "", fmt.Errorf("failed to run trial encode: %w", err)
+	}
 
 	// Now reset deterministic fields
 	cd.IssuedAt = issuedAt
@@ -123,4 +127,20 @@ func buildPermission(allow, deny []string) natsjwt.Permission {
 		p.Deny = natsjwt.StringList(deny)
 	}
 	return p
+}
+
+func applyTemporalClaimsDefaults(cd *natsjwt.ClaimsData, issuedAt, expires, notBefore types.Int64) {
+	if !issuedAt.IsNull() {
+		cd.IssuedAt = issuedAt.ValueInt64()
+	} else {
+		cd.IssuedAt = 0
+	}
+	if !expires.IsNull() {
+		cd.Expires = expires.ValueInt64()
+	}
+	if !notBefore.IsNull() {
+		cd.NotBefore = notBefore.ValueInt64()
+	} else {
+		cd.NotBefore = cd.IssuedAt
+	}
 }

@@ -25,12 +25,12 @@ type NatsLimitsModel struct {
 }
 
 type AccountLimitsModel struct {
-	Imports          types.Int64 `tfsdk:"imports"`
-	Exports          types.Int64 `tfsdk:"exports"`
-	WildcardExports  types.Bool  `tfsdk:"wildcard_exports"`
-	DisallowBearer   types.Bool  `tfsdk:"disallow_bearer"`
-	Conn             types.Int64 `tfsdk:"conn"`
-	LeafNodeConn     types.Int64 `tfsdk:"leaf_node_conn"`
+	Imports         types.Int64 `tfsdk:"imports"`
+	Exports         types.Int64 `tfsdk:"exports"`
+	WildcardExports types.Bool  `tfsdk:"wildcard_exports"`
+	DisallowBearer  types.Bool  `tfsdk:"disallow_bearer"`
+	Conn            types.Int64 `tfsdk:"conn"`
+	LeafNodeConn    types.Int64 `tfsdk:"leaf_node_conn"`
 }
 
 type JetStreamLimitsModel struct {
@@ -332,19 +332,7 @@ func buildAccountClaims(ctx context.Context, data AccountDataSourceModel, resp *
 
 	claims := natsjwt.NewAccountClaims(pub)
 	claims.Name = data.Name.ValueString()
-	if !data.IssuedAt.IsNull() {
-		claims.IssuedAt = data.IssuedAt.ValueInt64()
-	} else {
-		claims.IssuedAt = 0
-	}
-	if !data.Expires.IsNull() {
-		claims.Expires = data.Expires.ValueInt64()
-	}
-	if !data.NotBefore.IsNull() {
-		claims.NotBefore = data.NotBefore.ValueInt64()
-	} else {
-		claims.NotBefore = claims.IssuedAt
-	}
+	applyTemporalClaimsDefaults(claims.Claims(), data.IssuedAt, data.Expires, data.NotBefore)
 
 	if !data.SigningKeys.IsNull() {
 		var signingKeys []string
