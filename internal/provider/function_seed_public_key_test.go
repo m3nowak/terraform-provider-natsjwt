@@ -9,10 +9,10 @@ import (
 	"github.com/nats-io/nkeys"
 )
 
-func testSeedAndPublicKey(t *testing.T) (string, string) {
+func testSeedAndPublicKey(t *testing.T, prefix nkeys.PrefixByte) (string, string) {
 	t.Helper()
 
-	kp, err := nkeys.CreatePair(nkeys.PrefixByteAccount)
+	kp, err := nkeys.CreatePair(prefix)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,21 +31,34 @@ func testSeedAndPublicKey(t *testing.T) (string, string) {
 }
 
 func TestAccSeedPublicKeyFunction_Basic(t *testing.T) {
-	seed, expectedPublicKey := testSeedAndPublicKey(t)
+	testCases := []struct {
+		name   string
+		prefix nkeys.PrefixByte
+	}{
+		{name: "operator", prefix: nkeys.PrefixByteOperator},
+		{name: "account", prefix: nkeys.PrefixByteAccount},
+		{name: "user", prefix: nkeys.PrefixByteUser},
+	}
 
-	resource.Test(t, resource.TestCase{
-		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		Steps: []resource.TestStep{
-			{
-				Config: fmt.Sprintf(`
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			seed, expectedPublicKey := testSeedAndPublicKey(t, tc.prefix)
+
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+				Steps: []resource.TestStep{
+					{
+						Config: fmt.Sprintf(`
 output "public_key" {
   value = provider::natsjwt::seed_public_key(%q)
 }
 `, seed),
-				Check: resource.TestCheckOutput("public_key", expectedPublicKey),
-			},
-		},
-	})
+						Check: resource.TestCheckOutput("public_key", expectedPublicKey),
+					},
+				},
+			})
+		})
+	}
 }
 
 func TestAccSeedPublicKeyFunction_InvalidSeed(t *testing.T) {
