@@ -25,12 +25,12 @@ type NatsLimitsModel struct {
 }
 
 type AccountLimitsModel struct {
-	Imports         types.Int64 `tfsdk:"imports"`
-	Exports         types.Int64 `tfsdk:"exports"`
-	WildcardExports types.Bool  `tfsdk:"wildcard_exports"`
-	DisallowBearer  types.Bool  `tfsdk:"disallow_bearer"`
-	Conn            types.Int64 `tfsdk:"conn"`
-	LeafNodeConn    types.Int64 `tfsdk:"leaf_node_conn"`
+	Imports          types.Int64 `tfsdk:"imports"`
+	Exports          types.Int64 `tfsdk:"exports"`
+	WildcardExports  types.Bool  `tfsdk:"wildcard_exports"`
+	DisallowBearer   types.Bool  `tfsdk:"disallow_bearer"`
+	Conn             types.Int64 `tfsdk:"conn"`
+	LeafNodeConn     types.Int64 `tfsdk:"leaf_node_conn"`
 }
 
 type JetStreamLimitsModel struct {
