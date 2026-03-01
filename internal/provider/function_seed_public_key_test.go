@@ -9,7 +9,7 @@ import (
 	"github.com/nats-io/nkeys"
 )
 
-func testAccountSeedAndPublicKey(t *testing.T) (string, string) {
+func testSeedAndPublicKey(t *testing.T) (string, string) {
 	t.Helper()
 
 	kp, err := nkeys.CreatePair(nkeys.PrefixByteAccount)
@@ -31,7 +31,7 @@ func testAccountSeedAndPublicKey(t *testing.T) (string, string) {
 }
 
 func TestAccSeedPublicKeyFunction_Basic(t *testing.T) {
-	seed, expectedPublicKey := testAccountSeedAndPublicKey(t)
+	seed, expectedPublicKey := testSeedAndPublicKey(t)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
