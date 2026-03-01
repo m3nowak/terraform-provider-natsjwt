@@ -114,7 +114,7 @@ data "natsjwt_account" "with_permissions" {
 ## Attributes Reference
 
 - `public_key` - The account public key (starts with `A`).
-- `jwt` - The signed account JWT (sensitive).
+- `jwt` - The signed account JWT.
 
 ## Notes
 

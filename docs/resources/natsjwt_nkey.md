@@ -41,4 +41,8 @@ resource "natsjwt_nkey" "app_account" {
 
 ## Import
 
-NKeys cannot be imported as they are generated randomly. Use `terraform state rm` to remove an NKey resource and `terraform apply` to generate a new one.
+Import is unnecessary for this resource. Data sources in this provider only require seeds as inputs, so existing externally managed seeds can be passed directly to data source arguments.
+
+## Production Recommendation
+
+For production environments, prefer generating NKeys outside Terraform and storing seeds in an external secrets manager (for example, Azure Key Vault or HashiCorp Vault).
