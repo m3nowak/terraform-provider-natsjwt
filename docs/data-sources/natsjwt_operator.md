@@ -56,7 +56,7 @@ data "natsjwt_operator" "signing_keys" {
 ## Attributes Reference
 
 - `public_key` - The operator public key (starts with `O`).
-- `jwt` - The signed operator JWT (sensitive).
+- `jwt` - The signed operator JWT.
 
 ## Notes
 

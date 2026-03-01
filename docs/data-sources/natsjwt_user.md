@@ -120,7 +120,7 @@ data "natsjwt_user" "expired_demo" {
 ## Attributes Reference
 
 - `public_key` - The user public key (starts with `U`).
-- `jwt` - The signed user JWT (sensitive).
+- `jwt` - The signed user JWT.
 - `creds` - Full decorated NATS user credentials content (`.creds` format, includes JWT and user seed; sensitive).
 
 ## Notes

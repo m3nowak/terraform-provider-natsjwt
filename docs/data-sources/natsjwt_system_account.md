@@ -71,7 +71,7 @@ data "natsjwt_operator" "main" {
 ## Attributes Reference
 
 - `public_key` - The system account public key (starts with `A`).
-- `jwt` - The signed system account JWT (sensitive).
+- `jwt` - The signed system account JWT.
 
 ## Differences from natsjwt_account
 

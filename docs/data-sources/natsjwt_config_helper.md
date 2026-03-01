@@ -42,15 +42,15 @@ EOT
 
 ## Argument Reference
 
-- `operator_jwt` - (Required, sensitive) Operator JWT.
+- `operator_jwt` - (Required) Operator JWT.
 - `account_jwts` - (Optional) List of account JWTs.
-- `system_account_jwt` - (Optional, sensitive) System account JWT.
+- `system_account_jwt` - (Optional) System account JWT.
 - `resolver_type` - (Optional) Resolver type. Currently only `MEMORY` is supported. Defaults to `MEMORY`.
 
 ## Attributes Reference
 
-- `server_config` - The complete NATS server configuration snippet (sensitive).
-- `operator` - The operator JWT value (sensitive).
+- `server_config` - The complete NATS server configuration snippet.
+- `operator` - The operator JWT value.
 - `system_account` - The system account public key.
 - `resolver` - The resolver type (currently `MEMORY`).
 - `resolver_preload` - A map of account public keys to their JWTs for preloading in the resolver.
@@ -65,22 +65,14 @@ EOT
 
 ## Configuration Output Format
 
-The generated configuration follows the NATS server memory resolver format:
+The generated configuration follows this format:
 
 ```
-authorization {
-  operator: "<operator-jwt>"
-  system_account: "<system-account-public-key>"
-
-  users: [
-    {
-      nkey: "<account-public-key-1>"
-      jwt: "<account-jwt-1>"
-    },
-    {
-      nkey: "<account-public-key-2>"
-      jwt: "<account-jwt-2>"
-    }
-  ]
+operator: "<operator-jwt>"
+system_account: "<system-account-public-key>"
+resolver: MEMORY
+resolver_preload: {
+  <account-public-key-1>: <account-jwt-1>
+  <account-public-key-2>: <account-jwt-2>
 }
 ```
