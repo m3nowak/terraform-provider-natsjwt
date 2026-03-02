@@ -4,12 +4,14 @@ import (
 	"context"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/function"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 )
 
 var _ provider.Provider = &NatsjwtProvider{}
+var _ provider.ProviderWithFunctions = &NatsjwtProvider{}
 
 type NatsjwtProvider struct {
 	version string
@@ -50,5 +52,11 @@ func (p *NatsjwtProvider) DataSources(_ context.Context) []func() datasource.Dat
 		NewSystemAccountDataSource,
 		NewUserDataSource,
 		NewConfigHelperDataSource,
+	}
+}
+
+func (p *NatsjwtProvider) Functions(_ context.Context) []func() function.Function {
+	return []func() function.Function{
+		NewSeedPublicKeyFunction,
 	}
 }
