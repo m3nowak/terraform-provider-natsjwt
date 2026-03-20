@@ -71,7 +71,7 @@ func applySystemAccountDefaults(claims *natsjwt.AccountClaims) {
 			Name:    "account-monitoring-services",
 			Subject: "$SYS.REQ.ACCOUNT.*.*",
 			Type:    natsjwt.Service,
-			ResponseType: natsjwt.ResponseTypeSingleton,
+			ResponseType: natsjwt.ResponseTypeStream,
 			AccountTokenPosition: 4,
 			Info: natsjwt.Info{
 				Description: "Request account specific monitoring services for: SUBSZ, CONNZ, LEAFZ, JSZ and INFO",
