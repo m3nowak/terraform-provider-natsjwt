@@ -82,6 +82,9 @@ data "natsjwt_system_account" "test" {
 						for _, exp := range claims.Exports {
 							if exp.Subject == "$SYS.REQ.ACCOUNT.*.*" && exp.Type == natsjwt.Service {
 								hasServiceExport = true
+								if exp.ResponseType != natsjwt.ResponseTypeStream {
+									return fmt.Errorf("expected $SYS.REQ.ACCOUNT.*.* service export to have ResponseType %q, got %q", natsjwt.ResponseTypeStream, exp.ResponseType)
+								}
 							}
 							if exp.Subject == "$SYS.ACCOUNT.*.>" && exp.Type == natsjwt.Stream {
 								hasStreamExport = true
