@@ -13,7 +13,7 @@ Entire thing was vibe-coded. Use at your own risk.
 - **Offline operation** — generates NKeys and signed JWTs without connecting to a NATS server
 - **Deterministic JWTs** — same inputs always produce the same JWT output (stable `terraform plan`)
 - **Full JWT support** — operators, accounts (with JetStream limits), system accounts, and users
-- **Server config generation** — produces NATS server configuration with memory resolver
+- **Server config generation** — produces NATS server configuration snippet
 - **Seed validation** — validates that the correct key type is used for each operation
 - **External seed support** — use NKeys from external sources (e.g., HashiCorp Vault) or generate them with the provider
 - **Seed conversion function** — convert a seed to a public key with `provider::natsjwt::seed_public_key(...)`
@@ -117,6 +117,48 @@ output "user_creds" {
   sensitive = true
 }
 ```
+
+## Provider Configuration
+
+The provider supports the following optional arguments:
+
+- `nats_url` — NATS server URL for resolver interactions (e.g. `nats://localhost:4222`). Required when using `natsjwt_resolver_account` resources.
+- `creds` — Contents of a NATS credentials file (`.creds`) for authentication.
+
+```terraform
+provider "natsjwt" {
+  nats_url = "nats://localhost:4222"
+  creds    = file("/path/to/sys.creds")
+}
+```
+
+## NATS-Based Resolver Account Resource
+
+The `natsjwt_resolver_account` resource uploads and updates account JWTs on a running NATS server that uses the NATS-based resolver.
+
+```terraform
+resource "natsjwt_resolver_account" "app" {
+  jwt = data.natsjwt_account.app.jwt
+}
+```
+
+### Arguments
+
+- `jwt` (**Required**) — The signed account JWT to push to the NATS resolver.
+- `operator_seed` (Optional, Sensitive) — Operator seed used to sign deletion requests. If omitted, `terraform destroy` will only remove the resource from state and will **not** delete the account from the server.
+
+### Deleting Accounts
+
+To delete an account from the NATS resolver server, provide the `operator_seed`:
+
+```terraform
+resource "natsjwt_resolver_account" "app" {
+  jwt           = data.natsjwt_account.app.jwt
+  operator_seed = natsjwt_nkey.operator.seed
+}
+```
+
+If `operator_seed` is omitted, Terraform will emit a warning during destroy and leave the account on the server.
 
 ## Security Notes
 

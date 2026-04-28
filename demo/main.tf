@@ -124,6 +124,8 @@ jetstream {
 
 ${data.natsjwt_config_helper.server.server_config}
 
+resolver: MEMORY
+
 # Additional server configuration...
 websocket {
   port: 8080

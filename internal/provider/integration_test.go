@@ -95,7 +95,6 @@ data "natsjwt_config_helper" "server" {
 
 					// Config helper
 					resource.TestCheckResourceAttrSet("data.natsjwt_config_helper.server", "server_config"),
-					resource.TestCheckResourceAttr("data.natsjwt_config_helper.server", "resolver", "MEMORY"),
 
 					// Validate JWT chain
 					func(s *terraform.State) error {
