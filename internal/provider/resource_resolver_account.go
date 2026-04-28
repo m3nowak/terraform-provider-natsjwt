@@ -26,8 +26,9 @@ type NatsRequester interface {
 }
 
 type ResolverAccountResource struct {
-	connectFunc  func(url, creds string) (*nats.Conn, error)
-	providerData *NatsjwtProviderData
+	connectFunc      func(url, creds string) (*nats.Conn, error)
+	providerData     *NatsjwtProviderData
+	testConnOverride NatsRequester // test-only: overrides getConnection when set
 }
 
 type ResolverAccountResourceModel struct {
@@ -80,6 +81,9 @@ func (r *ResolverAccountResource) Configure(_ context.Context, req resource.Conf
 
 func (r *ResolverAccountResource) getConnection() (NatsRequester, diag.Diagnostics) {
 	var diags diag.Diagnostics
+	if r.testConnOverride != nil {
+		return r.testConnOverride, diags
+	}
 	if r.providerData == nil {
 		diags.AddError("Provider Not Configured", "Provider data is missing. Ensure 'nats_url' is set in the provider configuration.")
 		return nil, diags

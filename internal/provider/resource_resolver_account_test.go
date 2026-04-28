@@ -1,13 +1,17 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/nats-io/nats.go"
 	natsjwt "github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nkeys"
@@ -119,6 +123,29 @@ func TestResolverAccountResource_pushJWT_ErrorResponse(t *testing.T) {
 	}
 }
 
+func buildReadState(t *testing.T, r *ResolverAccountResource, jwtStr string) tfsdk.State {
+	t.Helper()
+	ctx := context.Background()
+	schemaResp := resource.SchemaResponse{}
+	r.Schema(ctx, resource.SchemaRequest{}, &schemaResp)
+	stateVal := tftypes.NewValue(
+		tftypes.Object{
+			AttributeTypes: map[string]tftypes.Type{
+				"jwt":           tftypes.String,
+				"operator_seed": tftypes.String,
+			},
+		},
+		map[string]tftypes.Value{
+			"jwt":           tftypes.NewValue(tftypes.String, jwtStr),
+			"operator_seed": tftypes.NewValue(tftypes.String, nil),
+		},
+	)
+	return tfsdk.State{
+		Raw:    stateVal,
+		Schema: schemaResp.Schema,
+	}
+}
+
 func TestResolverAccountResource_ReadDrift(t *testing.T) {
 	jwtStr := testAccountJWT(t)
 	claims, _ := natsjwt.DecodeAccountClaims(jwtStr)
@@ -136,13 +163,19 @@ func TestResolverAccountResource_ReadDrift(t *testing.T) {
 		},
 	}
 
-	nc := NatsRequester(mock)
-	msg, err := nc.Request(fmt.Sprintf("$SYS.REQ.ACCOUNT.%s.CLAIMS.LOOKUP", claims.Subject), nil, 5*time.Second)
-	if err != nil {
-		t.Fatal(err)
+	r := &ResolverAccountResource{testConnOverride: mock}
+	ctx := context.Background()
+	state := buildReadState(t, r, jwtStr)
+	req := resource.ReadRequest{State: state}
+	resp := resource.ReadResponse{State: state}
+
+	r.Read(ctx, req, &resp)
+
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", resp.Diagnostics)
 	}
-	if string(msg.Data) == jwtStr {
-		t.Fatal("expected different jwt")
+	if !resp.State.Raw.IsNull() {
+		t.Fatal("expected resource to be removed from state on JWT drift")
 	}
 }
 
@@ -159,13 +192,19 @@ func TestResolverAccountResource_ReadNotFound(t *testing.T) {
 		},
 	}
 
-	nc := NatsRequester(mock)
-	msg, err := nc.Request(fmt.Sprintf("$SYS.REQ.ACCOUNT.%s.CLAIMS.LOOKUP", claims.Subject), nil, 5*time.Second)
-	if err != nil {
-		t.Fatal(err)
+	r := &ResolverAccountResource{testConnOverride: mock}
+	ctx := context.Background()
+	state := buildReadState(t, r, jwtStr)
+	req := resource.ReadRequest{State: state}
+	resp := resource.ReadResponse{State: state}
+
+	r.Read(ctx, req, &resp)
+
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", resp.Diagnostics)
 	}
-	if len(msg.Data) != 0 {
-		t.Fatal("expected empty data")
+	if !resp.State.Raw.IsNull() {
+		t.Fatal("expected resource to be removed from state when account is not found")
 	}
 }
 
