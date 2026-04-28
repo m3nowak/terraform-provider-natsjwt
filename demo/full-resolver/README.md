@@ -36,7 +36,7 @@ cd demo/full-resolver
 mise r tf-apply-s2
 
 
-nats sub hello # subscibe to hello subject
+nats sub hello # subscribe to hello subject
 
 #in other terminal - cd to demo/full-resolver folder
 nats pub hello world # publish to hello subject
