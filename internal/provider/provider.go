@@ -38,7 +38,7 @@ func (p *NatsjwtProvider) Metadata(_ context.Context, _ provider.MetadataRequest
 
 func (p *NatsjwtProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manage NATS JWT credentials offline without a running NATS server.",
+		Description: "Manage NATS JWT credentials offline or interact with a running NATS server for resolver operations using optional nats_url and creds configuration.",
 		Attributes: map[string]schema.Attribute{
 			"nats_url": schema.StringAttribute{
 				Optional:    true,
