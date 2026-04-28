@@ -28,7 +28,7 @@ This resource exports no additional attributes.
 
 ## Notes
 
-- The provider must be configured with `nats_url` and `creds` for this resource to work.
+- The provider must be configured with `nats_url` for this resource to work. `creds` is optional and may be provided for authenticated connections.
 - On create and update, the resource sends the JWT to `$SYS.REQ.ACCOUNT.<pubkey>.CLAIMS.UPDATE`.
 - On read, it looks up the account via `$SYS.REQ.ACCOUNT.<pubkey>.CLAIMS.LOOKUP` and compares the returned JWT.
 - On delete, if `operator_seed` is provided, it sends an operator-signed delete request to `$SYS.REQ.CLAIMS.DELETE`.
