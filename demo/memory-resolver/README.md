@@ -28,7 +28,7 @@ Then, while the server is running:
 ```sh
 cd demo/memory-resolver
 
-nats sub hello # subscibe to hello subject
+nats sub hello # subscribe to hello subject
 
 #in other terminal - cd to demo/memory-resolver folder
 nats pub hello world # publish to hello subject
