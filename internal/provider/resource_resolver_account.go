@@ -162,7 +162,15 @@ func (r *ResolverAccountResource) Read(ctx context.Context, req resource.ReadReq
 	lookupSubj := fmt.Sprintf("$SYS.REQ.ACCOUNT.%s.CLAIMS.LOOKUP", claims.Subject)
 	msg, err := nc.Request(lookupSubj, nil, 5*time.Second)
 	if err != nil {
-		resp.State.RemoveResource(ctx)
+		if err == nats.ErrNoResponders {
+			resp.State.RemoveResource(ctx)
+			return
+		}
+
+		resp.Diagnostics.AddError(
+			"Failed to read account claims",
+			fmt.Sprintf("Failed to request account claims for subject %q: %s", claims.Subject, err),
+		)
 		return
 	}
 	if len(msg.Data) == 0 {
