@@ -88,5 +88,5 @@ resource "local_file" "user2_creds" {
 
 resource "natsjwt_resolver_account" "app" {
   jwt = data.natsjwt_account.app.jwt
-  # operator_seed - ommited
+  # operator_seed - omitted
 }
