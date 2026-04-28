@@ -242,9 +242,9 @@ func (r *ResolverAccountResource) Delete(ctx context.Context, req resource.Delet
 		return
 	}
 
-	// Build a generic operator-signed claim for deletion.
+	// Build a generic delete request claim for this account; the JWT is
+	// encoded/signed with the operator key in encodeDeterministicGeneric.
 	genClaims := natsjwt.NewGenericClaims(claims.Subject)
-	genClaims.Issuer = claims.Subject // must be self-signed
 	genClaims.Data = map[string]interface{}{
 		"accounts": []string{claims.Subject},
 	}
