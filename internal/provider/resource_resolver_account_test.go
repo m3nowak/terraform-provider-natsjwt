@@ -176,28 +176,6 @@ func TestResolverAccountResource_DeleteWithoutOperatorSeed(t *testing.T) {
 	}
 }
 
-func TestResolverAccountResource_DeleteSuccess(t *testing.T) {
-	mock := &mockNatsRequester{
-		requests: []mockRequest{
-			{
-				Subject: "$SYS.REQ.CLAIMS.DELETE",
-				Response: &nats.Msg{
-					Data: mustJSON(updateResponse{
-						Data: &updateData{Code: 200, Message: "deleted 1 accounts"},
-					}),
-				},
-			},
-		},
-	}
-
-	var diags diag.Diagnostics
-	r := &ResolverAccountResource{}
-	nc := NatsRequester(mock)
-	_ = nc
-	_ = diags
-	_ = r
-}
-
 func TestResolverAccountResource_MissingNatsUrl(t *testing.T) {
 	r := &ResolverAccountResource{
 		providerData: &NatsjwtProviderData{},
