@@ -34,7 +34,7 @@ nats sub hello # subscribe to hello subject
 nats pub hello world # publish to hello subject
 
 # By default, nats here uses app-user.creds creds, which have all permissions
-# We can change it to app-user2.creds, which is limmited to `app` prefix to check if the server properly restricts permissions
+# We can change it to app-user2.creds, which is limited to `app` prefix to check if the server properly restricts permissions
 nats pub hello world --creds ./app-user2.creds # should fail
 ```
 
