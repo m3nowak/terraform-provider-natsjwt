@@ -1,6 +1,7 @@
 # Demo
 
 Simple demo folder. To use it you will need [mise](https://mise.jdx.dev/) installed.
+The repository is currently tested with Go 1.25 and 1.26, and `mise` will install the default local toolchain for you.
 
 ## Setup
 
