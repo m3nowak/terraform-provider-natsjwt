@@ -128,6 +128,7 @@ output "user_creds" {
 
 - NATS 2.11 and 2.12
 - Terraform >= 1.0
+- Go 1.25 and 1.26
 - Uses `github.com/nats-io/jwt/v2` and `github.com/nats-io/nkeys`
 
 ## Demo

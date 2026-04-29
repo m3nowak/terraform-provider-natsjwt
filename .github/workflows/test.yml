@@ -14,8 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ["1.24", "1.25"]
-        terraform-version: ["1.13", "1.14"]
+        go-version: ["1.25", "1.26"]
+        terraform-version: ["1.13", "1.14", "1.15"]
     steps:
       - uses: actions/checkout@v6
         with:
