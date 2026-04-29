@@ -14,18 +14,18 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ["1.24", "1.25"]
-        terraform-version: ["1.13", "1.14"]
+        go-version: ["1.25", "1.26"]
+        terraform-version: ["1.13", "1.14", "1.15"]
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ matrix.terraform-version }}
           terraform_wrapper: false
