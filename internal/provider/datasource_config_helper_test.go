@@ -62,7 +62,6 @@ data "natsjwt_config_helper" "test" {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("data.natsjwt_config_helper.test", "operator", opJWT),
 					resource.TestCheckResourceAttr("data.natsjwt_config_helper.test", "system_account", sysPub),
-					resource.TestCheckResourceAttr("data.natsjwt_config_helper.test", "resolver", "MEMORY"),
 					resource.TestCheckResourceAttr("data.natsjwt_config_helper.test", "resolver_preload."+sysPub, sysJWT),
 					resource.TestCheckResourceAttr("data.natsjwt_config_helper.test", "resolver_preload."+acctPub, acctJWT),
 					func(s *terraform.State) error {
@@ -77,8 +76,8 @@ data "natsjwt_config_helper" "test" {
 						if !strings.Contains(config, "system_account:") {
 							return fmt.Errorf("server_config missing system_account")
 						}
-						if !strings.Contains(config, "resolver: MEMORY") {
-							return fmt.Errorf("server_config missing resolver")
+						if strings.Contains(config, "resolver: MEMORY") {
+							return fmt.Errorf("server_config should not contain resolver line")
 						}
 						if !strings.Contains(config, "resolver_preload:") {
 							return fmt.Errorf("server_config missing resolver_preload")
@@ -97,14 +96,12 @@ data "natsjwt_config_helper" "test" {
 	})
 }
 
-func TestAccConfigHelperDataSource_ResolverPreloadContents(t *testing.T) {
+func TestAccConfigHelperDataSource_NoSystemAccount(t *testing.T) {
 	opKP, _ := nkeys.CreatePair(nkeys.PrefixByteOperator)
 	opPub, _ := opKP.PublicKey()
 
-	acct1KP, _ := nkeys.CreatePair(nkeys.PrefixByteAccount)
-	acct1Pub, _ := acct1KP.PublicKey()
-	acct2KP, _ := nkeys.CreatePair(nkeys.PrefixByteAccount)
-	acct2Pub, _ := acct2KP.PublicKey()
+	acctKP, _ := nkeys.CreatePair(nkeys.PrefixByteAccount)
+	acctPub, _ := acctKP.PublicKey()
 
 	opClaims := natsjwt.NewOperatorClaims(opPub)
 	opClaims.Name = "op"
@@ -112,24 +109,18 @@ func TestAccConfigHelperDataSource_ResolverPreloadContents(t *testing.T) {
 	opClaims.ID = ""
 	opJWT, _ := opClaims.Encode(opKP)
 
-	acct1Claims := natsjwt.NewAccountClaims(acct1Pub)
-	acct1Claims.Name = "acct1"
-	acct1Claims.IssuedAt = 0
-	acct1Claims.ID = ""
-	acct1JWT, _ := acct1Claims.Encode(opKP)
-
-	acct2Claims := natsjwt.NewAccountClaims(acct2Pub)
-	acct2Claims.Name = "acct2"
-	acct2Claims.IssuedAt = 0
-	acct2Claims.ID = ""
-	acct2JWT, _ := acct2Claims.Encode(opKP)
+	acctClaims := natsjwt.NewAccountClaims(acctPub)
+	acctClaims.Name = "acct"
+	acctClaims.IssuedAt = 0
+	acctClaims.ID = ""
+	acctJWT, _ := acctClaims.Encode(opKP)
 
 	config := fmt.Sprintf(`
 data "natsjwt_config_helper" "test" {
   operator_jwt = %q
-  account_jwts = [%q, %q]
+  account_jwts = [%q]
 }
-`, opJWT, acct1JWT, acct2JWT)
+`, opJWT, acctJWT)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -137,8 +128,29 @@ data "natsjwt_config_helper" "test" {
 			{
 				Config: config,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("data.natsjwt_config_helper.test", "resolver_preload."+acct1Pub, acct1JWT),
-					resource.TestCheckResourceAttr("data.natsjwt_config_helper.test", "resolver_preload."+acct2Pub, acct2JWT),
+					resource.TestCheckResourceAttr("data.natsjwt_config_helper.test", "operator", opJWT),
+					resource.TestCheckResourceAttr("data.natsjwt_config_helper.test", "system_account", ""),
+					resource.TestCheckResourceAttr("data.natsjwt_config_helper.test", "resolver_preload."+acctPub, acctJWT),
+					func(s *terraform.State) error {
+						rs, ok := s.RootModule().Resources["data.natsjwt_config_helper.test"]
+						if !ok {
+							return fmt.Errorf("not found")
+						}
+						config := rs.Primary.Attributes["server_config"]
+						if !strings.Contains(config, "operator:") {
+							return fmt.Errorf("server_config missing operator")
+						}
+						if strings.Contains(config, "system_account:") {
+							return fmt.Errorf("server_config should not contain system_account when not provided")
+						}
+						if strings.Contains(config, "resolver: MEMORY") {
+							return fmt.Errorf("server_config should not contain resolver line")
+						}
+						if !strings.Contains(config, "resolver_preload:") {
+							return fmt.Errorf("server_config missing resolver_preload")
+						}
+						return nil
+					},
 				),
 			},
 		},

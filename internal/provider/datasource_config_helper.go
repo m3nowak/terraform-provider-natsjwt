@@ -19,11 +19,9 @@ type ConfigHelperDataSourceModel struct {
 	OperatorJWT      types.String `tfsdk:"operator_jwt"`
 	AccountJWTs      types.List   `tfsdk:"account_jwts"`
 	SystemAccountJWT types.String `tfsdk:"system_account_jwt"`
-	ResolverType     types.String `tfsdk:"resolver_type"`
 	ServerConfig     types.String `tfsdk:"server_config"`
 	Operator         types.String `tfsdk:"operator"`
 	SystemAccount    types.String `tfsdk:"system_account"`
-	Resolver         types.String `tfsdk:"resolver"`
 	ResolverPreload  types.Map    `tfsdk:"resolver_preload"`
 }
 
@@ -37,7 +35,7 @@ func (d *ConfigHelperDataSource) Metadata(_ context.Context, req datasource.Meta
 
 func (d *ConfigHelperDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Generates NATS server configuration for memory resolver from operator and account JWTs.",
+		Description: "Generates NATS server configuration snippet from operator and account JWTs.",
 		Attributes: map[string]schema.Attribute{
 			"operator_jwt": schema.StringAttribute{
 				Required:    true,
@@ -52,13 +50,9 @@ func (d *ConfigHelperDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 				Optional:    true,
 				Description: "The system account JWT.",
 			},
-			"resolver_type": schema.StringAttribute{
-				Optional:    true,
-				Description: "Resolver type. Currently only MEMORY is supported.",
-			},
 			"server_config": schema.StringAttribute{
 				Computed:    true,
-				Description: "Complete NATS server configuration snippet.",
+				Description: "Complete NATS server configuration snippet containing operator, system_account, and resolver_preload.",
 			},
 			"operator": schema.StringAttribute{
 				Computed:    true,
@@ -68,14 +62,10 @@ func (d *ConfigHelperDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 				Computed:    true,
 				Description: "The system account public key.",
 			},
-			"resolver": schema.StringAttribute{
-				Computed:    true,
-				Description: "The resolver type string.",
-			},
 			"resolver_preload": schema.MapAttribute{
 				ElementType: types.StringType,
 				Computed:    true,
-				Description: "Map of account public keys to their JWTs.",
+				Description: "Map of account public keys to their JWTs for preloading in the resolver.",
 			},
 		},
 	}
@@ -88,21 +78,10 @@ func (d *ConfigHelperDataSource) Read(ctx context.Context, req datasource.ReadRe
 		return
 	}
 
-	resolverType := "MEMORY"
-	if !data.ResolverType.IsNull() {
-		resolverType = data.ResolverType.ValueString()
-		if resolverType != "MEMORY" {
-			resp.Diagnostics.AddError("Unsupported Resolver Type",
-				fmt.Sprintf("Only MEMORY resolver is currently supported, got: %s", resolverType))
-			return
-		}
-	}
-
 	operatorJWT := data.OperatorJWT.ValueString()
 
 	preload := make(map[string]string)
 
-	// Decode system account JWT
 	var systemAccountPub string
 	if !data.SystemAccountJWT.IsNull() {
 		sysJWT := data.SystemAccountJWT.ValueString()
@@ -116,7 +95,6 @@ func (d *ConfigHelperDataSource) Read(ctx context.Context, req datasource.ReadRe
 		preload[systemAccountPub] = sysJWT
 	}
 
-	// Decode account JWTs
 	if !data.AccountJWTs.IsNull() {
 		var accountJWTs []string
 		resp.Diagnostics.Append(data.AccountJWTs.ElementsAs(ctx, &accountJWTs, false)...)
@@ -134,7 +112,6 @@ func (d *ConfigHelperDataSource) Read(ctx context.Context, req datasource.ReadRe
 		}
 	}
 
-	// Build resolver_preload map for TF state
 	preloadMap := make(map[string]string)
 	for k, v := range preload {
 		preloadMap[k] = v
@@ -146,13 +123,11 @@ func (d *ConfigHelperDataSource) Read(ctx context.Context, req datasource.ReadRe
 		return
 	}
 
-	// Build server config
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("operator: %s\n", operatorJWT))
 	if systemAccountPub != "" {
 		sb.WriteString(fmt.Sprintf("system_account: %s\n", systemAccountPub))
 	}
-	sb.WriteString(fmt.Sprintf("resolver: %s\n", resolverType))
 	if len(preload) > 0 {
 		sb.WriteString("resolver_preload: {\n")
 		for pub, jwt := range preload {
@@ -164,7 +139,6 @@ func (d *ConfigHelperDataSource) Read(ctx context.Context, req datasource.ReadRe
 	data.ServerConfig = types.StringValue(sb.String())
 	data.Operator = types.StringValue(operatorJWT)
 	data.SystemAccount = types.StringValue(systemAccountPub)
-	data.Resolver = types.StringValue(resolverType)
 	data.ResolverPreload = preloadTF
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)

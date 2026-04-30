@@ -23,15 +23,7 @@ resource "natsjwt_nkey" "sys_account" {
   type = "account"
 }
 
-resource "natsjwt_nkey" "app_account" {
-  type = "account"
-}
-
-resource "natsjwt_nkey" "app_user" {
-  type = "user"
-}
-
-resource "natsjwt_nkey" "app_user2" {
+resource "natsjwt_nkey" "sys_user" {
   type = "user"
 }
 
@@ -49,25 +41,23 @@ data "natsjwt_operator" "main" {
   system_account = data.natsjwt_system_account.sys.public_key
 }
 
-# Application account with JetStream
-data "natsjwt_account" "app" {
-  name          = "app"
-  seed          = natsjwt_nkey.app_account.seed
-  operator_seed = natsjwt_nkey.operator.seed
 
-  jetstream_limits = [{
-    mem_storage  = 1073741824
-    disk_storage = 10737418240
-    streams      = 10
-    consumer     = 100
-  }]
+# Generate NATS server config
+data "natsjwt_config_helper" "server" {
+  operator_jwt       = data.natsjwt_operator.main.jwt
+  system_account_jwt = data.natsjwt_system_account.sys.jwt
+  account_jwts       = []
+}
+
+output "server_config" {
+  value = data.natsjwt_config_helper.server.operator
 }
 
 # User with permissions
-data "natsjwt_user" "app_user" {
-  name         = "app-user"
-  seed         = natsjwt_nkey.app_user.seed
-  account_seed = natsjwt_nkey.app_account.seed
+data "natsjwt_user" "sys_user" {
+  name         = "sys-user"
+  seed         = natsjwt_nkey.sys_user.seed
+  account_seed = natsjwt_nkey.sys_account.seed
 
   permissions = {
     pub_allow = [">"]
@@ -75,41 +65,18 @@ data "natsjwt_user" "app_user" {
   }
 }
 
-# User with permissions
-data "natsjwt_user" "app_user2" {
-  name         = "app-user2"
-  seed         = natsjwt_nkey.app_user2.seed
-  account_seed = natsjwt_nkey.app_account.seed
-
-  permissions = {
-    pub_allow = ["app.>"]
-    sub_allow = ["app.>", "_INBOX.>"]
-  }
+resource "local_file" "sys_user_creds" {
+  filename = "${path.module}/../sys-user.creds"
+  content  = data.natsjwt_user.sys_user.creds
 }
 
-# Generate NATS server config
-data "natsjwt_config_helper" "server" {
-  operator_jwt       = data.natsjwt_operator.main.jwt
-  system_account_jwt = data.natsjwt_system_account.sys.jwt
-  account_jwts       = [data.natsjwt_account.app.jwt]
-}
-
-output "server_config" {
-  value = data.natsjwt_config_helper.server.operator
-}
-
-resource "local_file" "user_creds" {
-  filename = "${path.module}/app-user.creds"
-  content  = data.natsjwt_user.app_user.creds
-}
-
-resource "local_file" "user2_creds" {
-  filename = "${path.module}/app-user2.creds"
-  content  = data.natsjwt_user.app_user2.creds
+resource "local_sensitive_file" "operator_seed" {
+  filename = "${path.module}/../operator.nk"
+  content  = natsjwt_nkey.operator.seed
 }
 
 resource "local_file" "nats_config" {
-  filename = "${path.module}/nats-server.conf"
+  filename = "${path.module}/../nats-server.conf"
   content  = <<-EOT
 # NATS Server Configuration
 
@@ -123,6 +90,14 @@ jetstream {
 }
 
 ${data.natsjwt_config_helper.server.server_config}
+
+resolver: {
+    type: full
+    dir: './jwt'
+    allow_delete: false
+    interval: "10m"
+    limit: 1000
+}
 
 # Additional server configuration...
 websocket {

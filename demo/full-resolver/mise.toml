@@ -1,0 +1,42 @@
+[env]
+TF_CLI_CONFIG_FILE = "./terraform.rc"
+NATS_URL = "nats://localhost:4222"
+NATS_CREDS = "./app-user.creds"
+
+[tools]
+"github:nats-io/nats-server" = "2.12"
+"github:nats-io/natscli" = "0.3"
+
+[tasks.clear]
+run = "rm -rf jwt jetstream"
+run_windows = "rmdir /s /q jwt jetstream"
+
+[tasks.build-parent]
+run = "mise r --cd .. build"
+
+[tasks.tf-init-s1]
+run = "terraform init"
+dir = "{{ config_root }}/stage1"
+depends = "build-parent"
+
+[tasks.tf-apply-s1]
+run = "terraform apply -auto-approve"
+dir = "{{ config_root }}/stage1"
+depends = "tf-init-s1"
+
+[tasks.run-server]
+run = "nats-server -c ./nats-server.conf"
+depends = ["tf-apply-s1", "clear"]
+
+[tasks.verify-server-config]
+run = "nats-server -c ./nats-server.conf -t"
+
+[tasks.tf-init-s2]
+run = "terraform init"
+dir = "{{ config_root }}/stage2"
+depends = "build-parent"
+
+[tasks.tf-apply-s2]
+run = "terraform apply -auto-approve"
+dir = "{{ config_root }}/stage2"
+depends = "tf-init-s2"

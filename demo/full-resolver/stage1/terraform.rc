@@ -1,6 +1,6 @@
 provider_installation {
   dev_overrides {
-    "m3nowak/natsjwt" = ".."
+    "m3nowak/natsjwt" = "../../.."
   }
   direct {}
 }
