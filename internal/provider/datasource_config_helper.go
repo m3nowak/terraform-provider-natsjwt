@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -123,6 +124,15 @@ func (d *ConfigHelperDataSource) Read(ctx context.Context, req datasource.ReadRe
 		return
 	}
 
+	data.ServerConfig = types.StringValue(buildServerConfig(operatorJWT, systemAccountPub, preload))
+	data.Operator = types.StringValue(operatorJWT)
+	data.SystemAccount = types.StringValue(systemAccountPub)
+	data.ResolverPreload = preloadTF
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func buildServerConfig(operatorJWT, systemAccountPub string, preload map[string]string) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("operator: %s\n", operatorJWT))
 	if systemAccountPub != "" {
@@ -130,16 +140,16 @@ func (d *ConfigHelperDataSource) Read(ctx context.Context, req datasource.ReadRe
 	}
 	if len(preload) > 0 {
 		sb.WriteString("resolver_preload: {\n")
-		for pub, jwt := range preload {
-			sb.WriteString(fmt.Sprintf("  %s: %s\n", pub, jwt))
+		keys := make([]string, 0, len(preload))
+		for pub := range preload {
+			keys = append(keys, pub)
+		}
+		sort.Strings(keys)
+		for _, pub := range keys {
+			sb.WriteString(fmt.Sprintf("  %s: %s\n", pub, preload[pub]))
 		}
 		sb.WriteString("}\n")
 	}
 
-	data.ServerConfig = types.StringValue(sb.String())
-	data.Operator = types.StringValue(operatorJWT)
-	data.SystemAccount = types.StringValue(systemAccountPub)
-	data.ResolverPreload = preloadTF
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	return sb.String()
 }
