@@ -156,3 +156,49 @@ data "natsjwt_config_helper" "test" {
 		},
 	})
 }
+
+func TestBuildServerConfig_SortsResolverPreloadEntries(t *testing.T) {
+	t.Parallel()
+
+	config := buildServerConfig("operator-jwt", "SYS", map[string]string{
+		"ZACCOUNT": "z-jwt",
+		"AACCOUNT": "a-jwt",
+		"MACCOUNT": "m-jwt",
+	})
+
+	expected := strings.Join([]string{
+		"operator: operator-jwt",
+		"system_account: SYS",
+		"resolver_preload: {",
+		"  AACCOUNT: a-jwt",
+		"  MACCOUNT: m-jwt",
+		"  ZACCOUNT: z-jwt",
+		"}",
+		"",
+	}, "\n")
+
+	if config != expected {
+		t.Fatalf("unexpected server config:\nexpected:\n%s\ngot:\n%s", expected, config)
+	}
+}
+
+func TestBuildServerConfig_IsStableAcrossCalls(t *testing.T) {
+	t.Parallel()
+
+	preload := map[string]string{
+		"ZACCOUNT": "z-jwt",
+		"AACCOUNT": "a-jwt",
+		"MACCOUNT": "m-jwt",
+	}
+
+	configs := make([]string, 0, 16)
+	for range 16 {
+		configs = append(configs, buildServerConfig("operator-jwt", "SYS", preload))
+	}
+
+	for _, config := range configs[1:] {
+		if config != configs[0] {
+			t.Fatalf("server config changed across calls:\nfirst:\n%s\nlater:\n%s", configs[0], config)
+		}
+	}
+}
