@@ -12,8 +12,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
-	"github.com/nats-io/nats.go"
 	natsjwt "github.com/nats-io/jwt/v2"
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nkeys"
 )
 
@@ -259,7 +259,7 @@ func TestResolverAccountResource_CreateIntegration(t *testing.T) {
 	}
 }
 
-func TestResolverAccountResource_encodeDeterministicGeneric(t *testing.T) {
+func TestEncodeDeterministicGenericClaims(t *testing.T) {
 	jwtStr := testAccountJWT(t)
 	claims, _ := natsjwt.DecodeAccountClaims(jwtStr)
 
@@ -269,15 +269,28 @@ func TestResolverAccountResource_encodeDeterministicGeneric(t *testing.T) {
 	}
 	pub, _ := opKP.PublicKey()
 
-	genClaims := natsjwt.NewGenericClaims(claims.Subject)
-	genClaims.Issuer = claims.Subject
-	genClaims.Data = map[string]interface{}{
-		"accounts": []string{claims.Subject},
+	newClaims := func() *natsjwt.GenericClaims {
+		genClaims := natsjwt.NewGenericClaims(claims.Subject)
+		genClaims.Issuer = claims.Subject
+		genClaims.IssuedAt = 100
+		genClaims.Expires = 200
+		genClaims.NotBefore = 50
+		genClaims.Data = map[string]interface{}{
+			"accounts": []string{claims.Subject},
+		}
+		return genClaims
 	}
 
-	jwt, err := encodeDeterministicGeneric(genClaims, opKP)
+	jwt, err := encodeDeterministic(newClaims(), opKP)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	repeatedJWT, err := encodeDeterministic(newClaims(), opKP)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repeatedJWT != jwt {
+		t.Fatal("equivalent generic claims produced different JWTs")
 	}
 
 	decoded, err := natsjwt.DecodeGeneric(jwt)
@@ -286,6 +299,12 @@ func TestResolverAccountResource_encodeDeterministicGeneric(t *testing.T) {
 	}
 	if decoded.Issuer != pub {
 		t.Fatalf("expected issuer %s, got %s", pub, decoded.Issuer)
+	}
+	if decoded.Data["version"] != float64(2) {
+		t.Fatalf("expected version 2, got %v", decoded.Data["version"])
+	}
+	if decoded.IssuedAt != 100 || decoded.Expires != 200 || decoded.NotBefore != 50 {
+		t.Fatalf("temporal claims changed: iat=%d exp=%d nbf=%d", decoded.IssuedAt, decoded.Expires, decoded.NotBefore)
 	}
 	accounts, ok := decoded.Data["accounts"].([]interface{})
 	if !ok || len(accounts) != 1 || accounts[0] != claims.Subject {
