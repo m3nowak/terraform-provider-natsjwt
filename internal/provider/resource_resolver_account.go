@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -246,14 +245,13 @@ func (r *ResolverAccountResource) Delete(ctx context.Context, req resource.Delet
 		return
 	}
 
-	// Build a generic delete request claim for this account; the JWT is
-	// encoded/signed with the operator key in encodeDeterministicGeneric.
+	// Build a generic delete request claim for this account.
 	genClaims := natsjwt.NewGenericClaims(claims.Subject)
 	genClaims.Data = map[string]interface{}{
 		"accounts": []string{claims.Subject},
 	}
 
-	deleteJWT, err := encodeDeterministicGeneric(genClaims, operatorKP)
+	deleteJWT, err := encodeDeterministic(genClaims, operatorKP)
 	if err != nil {
 		resp.Diagnostics.AddError("JWT Encoding Error", fmt.Sprintf("Failed to encode delete request JWT: %s", err))
 		return
@@ -306,51 +304,4 @@ func (r *ResolverAccountResource) pushJWT(nc NatsRequester, jwtStr string, diags
 		return fmt.Errorf("update failed: %s", ur.Error.Description)
 	}
 	return nil
-}
-
-// encodeDeterministicGeneric encodes generic claims deterministically, mirroring
-// the deterministic JWT logic used for standard claims.
-func encodeDeterministicGeneric(claims *natsjwt.GenericClaims, kp nkeys.KeyPair) (string, error) {
-	cd := claims.Claims()
-	issuedAt := cd.IssuedAt
-	cd.ID = ""
-
-	header := map[string]string{
-		"typ": "JWT",
-		"alg": "ed25519-nkey",
-	}
-	headerJSON, err := json.Marshal(header)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal header: %w", err)
-	}
-	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
-
-	pub, err := kp.PublicKey()
-	if err != nil {
-		return "", fmt.Errorf("failed to get public key: %w", err)
-	}
-	cd.Issuer = pub
-
-	// Trigger internal updates via trial encode.
-	if _, err := claims.Encode(kp); err != nil {
-		return "", fmt.Errorf("failed to run trial encode: %w", err)
-	}
-
-	cd.IssuedAt = issuedAt
-	cd.ID = ""
-
-	payloadJSON, err := json.Marshal(claims)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal claims: %w", err)
-	}
-	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
-
-	toSign := headerB64 + "." + payloadB64
-	sig, err := kp.Sign([]byte(toSign))
-	if err != nil {
-		return "", fmt.Errorf("failed to sign: %w", err)
-	}
-	sigB64 := base64.RawURLEncoding.EncodeToString(sig)
-
-	return toSign + "." + sigB64, nil
 }

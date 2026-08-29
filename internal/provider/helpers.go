@@ -1,8 +1,6 @@
 package provider
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -12,64 +10,6 @@ import (
 )
 
 var objectAsOptions = basetypes.ObjectAsOptions{}
-
-// encodeDeterministic encodes claims with stable deterministic fields.
-// The standard jwt library always sets IssuedAt to the current time, so instead
-// we build the JWT manually: adjust the claim fields we care about, perform a
-// trial Encode to trigger internal updates (specifically updateVersion), then
-// marshal the header and payload ourselves and sign the result for a
-// deterministic token.
-func encodeDeterministic(claims natsjwt.Claims, kp nkeys.KeyPair) (string, error) {
-	// First, do a normal encode to get a valid JWT structure
-	cd := claims.Claims()
-	issuedAt := cd.IssuedAt
-	cd.ID = ""
-
-	// We need to manually construct the JWT with deterministic fields.
-	// Build header
-	header := map[string]string{
-		"typ": "JWT",
-		"alg": "ed25519-nkey",
-	}
-	headerJSON, err := json.Marshal(header)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal header: %w", err)
-	}
-	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
-
-	// Set issuer from keypair
-	pub, err := kp.PublicKey()
-	if err != nil {
-		return "", fmt.Errorf("failed to get public key: %w", err)
-	}
-	cd.Issuer = pub
-
-	// Ensure updateVersion is called by doing a trial encode first
-	if _, err := claims.Encode(kp); err != nil {
-		return "", fmt.Errorf("failed to run trial encode: %w", err)
-	}
-
-	// Now reset deterministic fields
-	cd.IssuedAt = issuedAt
-	cd.ID = ""
-
-	// Serialize payload
-	payloadJSON, err := json.Marshal(claims)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal claims: %w", err)
-	}
-	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
-
-	// Sign
-	toSign := headerB64 + "." + payloadB64
-	sig, err := kp.Sign([]byte(toSign))
-	if err != nil {
-		return "", fmt.Errorf("failed to sign: %w", err)
-	}
-	sigB64 := base64.RawURLEncoding.EncodeToString(sig)
-
-	return toSign + "." + sigB64, nil
-}
 
 // prefixByteFromType converts a string type name to an nkeys.PrefixByte.
 func prefixByteFromType(keyType string) (nkeys.PrefixByte, error) {
