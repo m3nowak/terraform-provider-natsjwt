@@ -4,10 +4,6 @@ A Terraform provider for managing [NATS](https://nats.io/) JWT credentials offli
 
 This provider is a Terraform-native replacement for the [`nsc`](https://github.com/nats-io/nsc) command-line tool, enabling you to manage operators, accounts, users, and server configuration as code.
 
-## ⚠️ Warning ⚠️
-
-Entire thing was vibe-coded. Use at your own risk.
-
 ## Features
 
 - **Offline operation** — generates NKeys and signed JWTs without connecting to a NATS server
