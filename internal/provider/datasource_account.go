@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	schemavalidator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	natsjwt "github.com/nats-io/jwt/v2"
@@ -294,39 +295,48 @@ func (d *AccountDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		return
 	}
 
-	claims, pub, err := buildAccountClaims(ctx, data, resp)
-	if err != nil || resp.Diagnostics.HasError() {
+	generateAccount(ctx, &data, false, &resp.Diagnostics)
+	if !resp.Diagnostics.HasError() {
+		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	}
+}
+
+func generateAccount(ctx context.Context, data *AccountDataSourceModel, system bool, diagnostics *diag.Diagnostics) {
+	claims, pub, err := buildAccountClaims(ctx, *data, diagnostics)
+	if err != nil || diagnostics.HasError() {
 		return
+	}
+	if system {
+		applySystemAccountDefaults(claims)
 	}
 
 	operatorKP, err := keypairFromSeed(data.OperatorSeed.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Invalid Operator Seed", fmt.Sprintf("Failed to parse operator seed: %s", err))
+		diagnostics.AddError("Invalid Operator Seed", fmt.Sprintf("Failed to parse operator seed: %s", err))
 		return
 	}
 
 	jwtString, err := encodeDeterministic(claims, operatorKP)
 	if err != nil {
-		resp.Diagnostics.AddError("JWT Encoding Error", fmt.Sprintf("Failed to encode account JWT: %s", err))
+		diagnostics.AddError("JWT Encoding Error", fmt.Sprintf("Failed to encode account JWT: %s", err))
 		return
 	}
 
 	data.PublicKey = types.StringValue(pub)
 	data.JWT = types.StringValue(jwtString)
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 // buildAccountClaims constructs account claims from the data model. Shared by account and system_account.
-func buildAccountClaims(ctx context.Context, data AccountDataSourceModel, resp *datasource.ReadResponse) (*natsjwt.AccountClaims, string, error) {
+func buildAccountClaims(ctx context.Context, data AccountDataSourceModel, diagnostics *diag.Diagnostics) (*natsjwt.AccountClaims, string, error) {
 	accountKP, err := keypairFromSeed(data.Seed.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Invalid Account Seed", fmt.Sprintf("Failed to parse account seed: %s", err))
+		diagnostics.AddError("Invalid Account Seed", fmt.Sprintf("Failed to parse account seed: %s", err))
 		return nil, "", err
 	}
 
 	pub, err := accountKP.PublicKey()
 	if err != nil {
-		resp.Diagnostics.AddError("Public Key Error", fmt.Sprintf("Failed to get public key: %s", err))
+		diagnostics.AddError("Public Key Error", fmt.Sprintf("Failed to get public key: %s", err))
 		return nil, "", err
 	}
 
@@ -336,8 +346,8 @@ func buildAccountClaims(ctx context.Context, data AccountDataSourceModel, resp *
 
 	if !data.SigningKeys.IsNull() {
 		var signingKeys []string
-		resp.Diagnostics.Append(data.SigningKeys.ElementsAs(ctx, &signingKeys, false)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.SigningKeys.ElementsAs(ctx, &signingKeys, false)...)
+		if diagnostics.HasError() {
 			return nil, "", fmt.Errorf("failed to read signing keys")
 		}
 		for _, sk := range signingKeys {
@@ -355,8 +365,8 @@ func buildAccountClaims(ctx context.Context, data AccountDataSourceModel, resp *
 
 	if !data.Tags.IsNull() {
 		var tags []string
-		resp.Diagnostics.Append(data.Tags.ElementsAs(ctx, &tags, false)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.Tags.ElementsAs(ctx, &tags, false)...)
+		if diagnostics.HasError() {
 			return nil, "", fmt.Errorf("failed to read tags")
 		}
 		claims.Tags = tags
@@ -365,8 +375,8 @@ func buildAccountClaims(ctx context.Context, data AccountDataSourceModel, resp *
 	// NATS limits
 	if !data.NatsLimits.IsNull() {
 		var nl NatsLimitsModel
-		resp.Diagnostics.Append(data.NatsLimits.As(ctx, &nl, objectAsOptions)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.NatsLimits.As(ctx, &nl, objectAsOptions)...)
+		if diagnostics.HasError() {
 			return nil, "", fmt.Errorf("failed to read nats limits")
 		}
 		if !nl.Subs.IsNull() {
@@ -389,8 +399,8 @@ func buildAccountClaims(ctx context.Context, data AccountDataSourceModel, resp *
 	// Account limits
 	if !data.AccountLimits.IsNull() {
 		var al AccountLimitsModel
-		resp.Diagnostics.Append(data.AccountLimits.As(ctx, &al, objectAsOptions)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.AccountLimits.As(ctx, &al, objectAsOptions)...)
+		if diagnostics.HasError() {
 			return nil, "", fmt.Errorf("failed to read account limits")
 		}
 		if !al.Imports.IsNull() {
@@ -426,8 +436,8 @@ func buildAccountClaims(ctx context.Context, data AccountDataSourceModel, resp *
 	// JetStream limits
 	if !data.JetStreamLimits.IsNull() {
 		var jsLimits []JetStreamLimitsModel
-		resp.Diagnostics.Append(data.JetStreamLimits.ElementsAs(ctx, &jsLimits, false)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.JetStreamLimits.ElementsAs(ctx, &jsLimits, false)...)
+		if diagnostics.HasError() {
 			return nil, "", fmt.Errorf("failed to read jetstream limits")
 		}
 
@@ -481,24 +491,24 @@ func buildAccountClaims(ctx context.Context, data AccountDataSourceModel, resp *
 	// Default permissions
 	if !data.DefaultPermissions.IsNull() {
 		var dp DefaultPermissionsModel
-		resp.Diagnostics.Append(data.DefaultPermissions.As(ctx, &dp, objectAsOptions)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.DefaultPermissions.As(ctx, &dp, objectAsOptions)...)
+		if diagnostics.HasError() {
 			return nil, "", fmt.Errorf("failed to read default permissions")
 		}
 		var pubAllow, pubDeny, subAllow, subDeny []string
 		if !dp.PubAllow.IsNull() {
-			resp.Diagnostics.Append(dp.PubAllow.ElementsAs(ctx, &pubAllow, false)...)
+			diagnostics.Append(dp.PubAllow.ElementsAs(ctx, &pubAllow, false)...)
 		}
 		if !dp.PubDeny.IsNull() {
-			resp.Diagnostics.Append(dp.PubDeny.ElementsAs(ctx, &pubDeny, false)...)
+			diagnostics.Append(dp.PubDeny.ElementsAs(ctx, &pubDeny, false)...)
 		}
 		if !dp.SubAllow.IsNull() {
-			resp.Diagnostics.Append(dp.SubAllow.ElementsAs(ctx, &subAllow, false)...)
+			diagnostics.Append(dp.SubAllow.ElementsAs(ctx, &subAllow, false)...)
 		}
 		if !dp.SubDeny.IsNull() {
-			resp.Diagnostics.Append(dp.SubDeny.ElementsAs(ctx, &subDeny, false)...)
+			diagnostics.Append(dp.SubDeny.ElementsAs(ctx, &subDeny, false)...)
 		}
-		if resp.Diagnostics.HasError() {
+		if diagnostics.HasError() {
 			return nil, "", fmt.Errorf("failed to read permissions lists")
 		}
 		claims.DefaultPermissions.Pub = buildPermission(pubAllow, pubDeny)
@@ -508,8 +518,8 @@ func buildAccountClaims(ctx context.Context, data AccountDataSourceModel, resp *
 	// Trace
 	if !data.Trace.IsNull() {
 		var t TraceModel
-		resp.Diagnostics.Append(data.Trace.As(ctx, &t, objectAsOptions)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.Trace.As(ctx, &t, objectAsOptions)...)
+		if diagnostics.HasError() {
 			return nil, "", fmt.Errorf("failed to read trace")
 		}
 		if !t.Destination.IsNull() {

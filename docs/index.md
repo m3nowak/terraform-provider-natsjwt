@@ -16,6 +16,7 @@ Entire thing was vibe-coded. Use at your own risk.
 - **Server config generation** — produces NATS server configuration snippet
 - **Seed validation** — validates that the correct key type is used for each operation
 - **External seed support** — use NKeys from external sources (e.g., HashiCorp Vault) or generate them with the provider
+- **Ephemeral credentials** — generate operator, account, system-account, and user JWT values without writing seeds or results to plan or state
 - **Seed conversion function** — convert a seed to a public key with `provider::natsjwt::seed_public_key(...)`
 
 ## Example Usage
@@ -162,14 +163,19 @@ If `operator_seed` is omitted, Terraform will emit a warning during destroy and 
 
 ## Security Notes
 
-- **Seeds are sensitive** — they are stored in Terraform state and marked as sensitive
+- **Sensitive is not ephemeral** — sensitive data-source attributes are redacted in CLI output but are still stored in Terraform plan and state
+- **Ephemeral JWT generation** — with Terraform 1.10 or later, use the `natsjwt_operator`, `natsjwt_account`, `natsjwt_system_account`, and `natsjwt_user` ephemeral resources when seeds and generated credentials must not be persisted
+- **Ephemeral result restrictions** — ephemeral results can only flow into other ephemeral contexts, provider configuration, provisioners, or write-only resource arguments
+- **Regular data-source seeds are sensitive** — they are stored in Terraform state and marked as sensitive
 - **State should be encrypted** — use remote state backends with encryption
 - Consider using external seed management for production setups
+
+See the [ephemeral resource guide](ephemeral-resources/natsjwt_user.md) for usage and migration details. Existing data sources remain available when persisted outputs are required.
 
 ## Compatibility
 
 - NATS 2.11 and 2.12
-- Terraform >= 1.0
+- Terraform >= 1.0 for regular resources and data sources; Terraform >= 1.10 for ephemeral resources
 - Go 1.25 and 1.26
 - Uses `github.com/nats-io/jwt/v2` and `github.com/nats-io/nkeys`
 
