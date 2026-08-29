@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/m3nowak/terraform-provider-natsjwt/internal/issuance"
 	natsjwt "github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nkeys"
@@ -251,7 +252,7 @@ func (r *ResolverAccountResource) Delete(ctx context.Context, req resource.Delet
 		"accounts": []string{claims.Subject},
 	}
 
-	deleteJWT, err := encodeDeterministic(genClaims, operatorKP)
+	deleteJWT, err := issuance.EncodeDeterministic(genClaims, operatorKP)
 	if err != nil {
 		resp.Diagnostics.AddError("JWT Encoding Error", fmt.Sprintf("Failed to encode delete request JWT: %s", err))
 		return

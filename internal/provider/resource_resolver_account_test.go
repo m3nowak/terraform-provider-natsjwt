@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/m3nowak/terraform-provider-natsjwt/internal/issuance"
 	natsjwt "github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nkeys"
@@ -281,11 +282,11 @@ func TestEncodeDeterministicGenericClaims(t *testing.T) {
 		return genClaims
 	}
 
-	jwt, err := encodeDeterministic(newClaims(), opKP)
+	jwt, err := issuance.EncodeDeterministic(newClaims(), opKP)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	repeatedJWT, err := encodeDeterministic(newClaims(), opKP)
+	repeatedJWT, err := issuance.EncodeDeterministic(newClaims(), opKP)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

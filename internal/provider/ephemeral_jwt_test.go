@@ -9,14 +9,13 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-version"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
-	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfversion"
+	"github.com/m3nowak/terraform-provider-natsjwt/internal/issuance"
 )
 
 func TestProviderRegistersJWTEphemeralResources(t *testing.T) {
@@ -132,17 +131,11 @@ ephemeral "natsjwt_user" "test" {
 
 func expectedBasicUserEphemeralValues(t *testing.T, userSeed, accountSeed string) (string, string) {
 	t.Helper()
-	data := UserDataSourceModel{
-		Name:        types.StringValue("user"),
-		Seed:        types.StringValue(userSeed),
-		AccountSeed: types.StringValue(accountSeed),
+	artifacts, err := issuance.IssueUser(issuance.UserInput{Name: "user", Seed: userSeed, AccountSeed: accountSeed})
+	if err != nil {
+		t.Fatalf("issue expected user values: %v", err)
 	}
-	var diagnostics diag.Diagnostics
-	generateUser(context.Background(), &data, &diagnostics)
-	if diagnostics.HasError() {
-		t.Fatalf("generate expected user values: %v", diagnostics)
-	}
-	return data.JWT.ValueString(), data.Creds.ValueString()
+	return artifacts.JWT, artifacts.Creds
 }
 
 func TestAccJWTEphemeralResourcesMatchDataSources(t *testing.T) {

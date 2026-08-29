@@ -1,4 +1,4 @@
-package provider
+package issuance
 
 import (
 	"encoding/base64"
@@ -12,9 +12,8 @@ import (
 
 var encodedJWTHeader = base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ed25519-nkey","typ":"JWT"}`))
 
-// encodeDeterministic applies the jwt library's claim normalization to a copy,
-// then restores caller-provided times before producing a stable signature.
-func encodeDeterministic(claims natsjwt.Claims, kp nkeys.KeyPair) (string, error) {
+// EncodeDeterministic applies library normalization to a copy before stable signing.
+func EncodeDeterministic(claims natsjwt.Claims, kp nkeys.KeyPair) (string, error) {
 	cloned, err := cloneClaims(claims)
 	if err != nil {
 		return "", err
@@ -25,7 +24,7 @@ func encodeDeterministic(claims natsjwt.Claims, kp nkeys.KeyPair) (string, error
 	expires := claimData.Expires
 	notBefore := claimData.NotBefore
 	if _, err := cloned.Encode(kp); err != nil {
-		return "", fmt.Errorf("failed to normalize claims: %w", err)
+		return "", fmt.Errorf("normalize claims: %w", err)
 	}
 	claimData.IssuedAt = issuedAt
 	claimData.Expires = expires
@@ -34,12 +33,12 @@ func encodeDeterministic(claims natsjwt.Claims, kp nkeys.KeyPair) (string, error
 
 	payload, err := json.Marshal(cloned)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal claims: %w", err)
+		return "", fmt.Errorf("marshal claims: %w", err)
 	}
 	toSign := encodedJWTHeader + "." + base64.RawURLEncoding.EncodeToString(payload)
 	signature, err := kp.Sign([]byte(toSign))
 	if err != nil {
-		return "", fmt.Errorf("failed to sign claims: %w", err)
+		return "", fmt.Errorf("sign claims: %w", err)
 	}
 	return toSign + "." + base64.RawURLEncoding.EncodeToString(signature), nil
 }
@@ -56,10 +55,10 @@ func cloneClaims(claims natsjwt.Claims) (natsjwt.Claims, error) {
 	}
 	payload, err := json.Marshal(claims)
 	if err != nil {
-		return nil, fmt.Errorf("failed to clone claims: %w", err)
+		return nil, fmt.Errorf("clone claims: %w", err)
 	}
 	if err := json.Unmarshal(payload, cloned); err != nil {
-		return nil, fmt.Errorf("failed to clone claims: %w", err)
+		return nil, fmt.Errorf("clone claims: %w", err)
 	}
 	return cloned, nil
 }

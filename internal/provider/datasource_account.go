@@ -2,14 +2,13 @@ package provider
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	schemavalidator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	natsjwt "github.com/nats-io/jwt/v2"
+	"github.com/m3nowak/terraform-provider-natsjwt/internal/issuance"
 	"github.com/nats-io/nkeys"
 )
 
@@ -302,235 +301,93 @@ func (d *AccountDataSource) Read(ctx context.Context, req datasource.ReadRequest
 }
 
 func generateAccount(ctx context.Context, data *AccountDataSourceModel, system bool, diagnostics *diag.Diagnostics) {
-	claims, pub, err := buildAccountClaims(ctx, *data, diagnostics)
-	if err != nil || diagnostics.HasError() {
-		return
-	}
+	input := accountInputFromModel(ctx, *data, diagnostics)
 	if system {
-		applySystemAccountDefaults(claims)
+		input.Kind = issuance.SystemAccount
 	}
-
-	operatorKP, err := keypairFromSeed(data.OperatorSeed.ValueString())
-	if err != nil {
-		diagnostics.AddError("Invalid Operator Seed", fmt.Sprintf("Failed to parse operator seed: %s", err))
+	if diagnostics.HasError() {
 		return
 	}
-
-	jwtString, err := encodeDeterministic(claims, operatorKP)
+	artifacts, err := issuance.IssueAccount(input)
 	if err != nil {
-		diagnostics.AddError("JWT Encoding Error", fmt.Sprintf("Failed to encode account JWT: %s", err))
+		diagnostics.AddError("JWT Issuance Error", err.Error())
 		return
 	}
-
-	data.PublicKey = types.StringValue(pub)
-	data.JWT = types.StringValue(jwtString)
+	data.PublicKey = types.StringValue(artifacts.PublicKey)
+	data.JWT = types.StringValue(artifacts.JWT)
 }
 
-// buildAccountClaims constructs account claims from the data model. Shared by account and system_account.
-func buildAccountClaims(ctx context.Context, data AccountDataSourceModel, diagnostics *diag.Diagnostics) (*natsjwt.AccountClaims, string, error) {
-	accountKP, err := keypairFromSeed(data.Seed.ValueString())
-	if err != nil {
-		diagnostics.AddError("Invalid Account Seed", fmt.Sprintf("Failed to parse account seed: %s", err))
-		return nil, "", err
+func accountInputFromModel(ctx context.Context, data AccountDataSourceModel, diagnostics *diag.Diagnostics) issuance.AccountInput {
+	input := issuance.AccountInput{
+		Kind:         issuance.StandardAccount,
+		Name:         data.Name.ValueString(),
+		Seed:         data.Seed.ValueString(),
+		OperatorSeed: data.OperatorSeed.ValueString(),
+		SigningKeys:  decodeStringList(ctx, data.SigningKeys, diagnostics),
+		Temporal:     temporalInput(data.IssuedAt, data.Expires, data.NotBefore),
+		Description:  optionalString(data.Description),
+		InfoURL:      optionalString(data.InfoURL),
+		Tags:         decodeStringList(ctx, data.Tags, diagnostics),
 	}
-
-	pub, err := accountKP.PublicKey()
-	if err != nil {
-		diagnostics.AddError("Public Key Error", fmt.Sprintf("Failed to get public key: %s", err))
-		return nil, "", err
-	}
-
-	claims := natsjwt.NewAccountClaims(pub)
-	claims.Name = data.Name.ValueString()
-	applyTemporalClaimsDefaults(claims.Claims(), data.IssuedAt, data.Expires, data.NotBefore)
-
-	if !data.SigningKeys.IsNull() {
-		var signingKeys []string
-		diagnostics.Append(data.SigningKeys.ElementsAs(ctx, &signingKeys, false)...)
-		if diagnostics.HasError() {
-			return nil, "", fmt.Errorf("failed to read signing keys")
-		}
-		for _, sk := range signingKeys {
-			claims.SigningKeys.Add(sk)
-		}
-	}
-
-	if !data.Description.IsNull() {
-		claims.Description = data.Description.ValueString()
-	}
-
-	if !data.InfoURL.IsNull() {
-		claims.InfoURL = data.InfoURL.ValueString()
-	}
-
-	if !data.Tags.IsNull() {
-		var tags []string
-		diagnostics.Append(data.Tags.ElementsAs(ctx, &tags, false)...)
-		if diagnostics.HasError() {
-			return nil, "", fmt.Errorf("failed to read tags")
-		}
-		claims.Tags = tags
-	}
-
-	// NATS limits
 	if !data.NatsLimits.IsNull() {
 		var nl NatsLimitsModel
 		diagnostics.Append(data.NatsLimits.As(ctx, &nl, objectAsOptions)...)
-		if diagnostics.HasError() {
-			return nil, "", fmt.Errorf("failed to read nats limits")
-		}
-		if !nl.Subs.IsNull() {
-			claims.Limits.Subs = nl.Subs.ValueInt64()
-		} else {
-			claims.Limits.Subs = -1
-		}
-		if !nl.Data.IsNull() {
-			claims.Limits.Data = nl.Data.ValueInt64()
-		} else {
-			claims.Limits.Data = -1
-		}
-		if !nl.Payload.IsNull() {
-			claims.Limits.Payload = nl.Payload.ValueInt64()
-		} else {
-			claims.Limits.Payload = -1
+		input.NATSLimits = &issuance.NATSLimits{
+			Subscriptions: optionalInt64(nl.Subs),
+			Data:          optionalInt64(nl.Data),
+			Payload:       optionalInt64(nl.Payload),
 		}
 	}
-
-	// Account limits
 	if !data.AccountLimits.IsNull() {
 		var al AccountLimitsModel
 		diagnostics.Append(data.AccountLimits.As(ctx, &al, objectAsOptions)...)
-		if diagnostics.HasError() {
-			return nil, "", fmt.Errorf("failed to read account limits")
-		}
-		if !al.Imports.IsNull() {
-			claims.Limits.Imports = al.Imports.ValueInt64()
-		} else {
-			claims.Limits.Imports = -1
-		}
-		if !al.Exports.IsNull() {
-			claims.Limits.Exports = al.Exports.ValueInt64()
-		} else {
-			claims.Limits.Exports = -1
-		}
-		if !al.WildcardExports.IsNull() {
-			claims.Limits.WildcardExports = al.WildcardExports.ValueBool()
-		} else {
-			claims.Limits.WildcardExports = true
-		}
-		if !al.DisallowBearer.IsNull() {
-			claims.Limits.DisallowBearer = al.DisallowBearer.ValueBool()
-		}
-		if !al.Conn.IsNull() {
-			claims.Limits.Conn = al.Conn.ValueInt64()
-		} else {
-			claims.Limits.Conn = -1
-		}
-		if !al.LeafNodeConn.IsNull() {
-			claims.Limits.LeafNodeConn = al.LeafNodeConn.ValueInt64()
-		} else {
-			claims.Limits.LeafNodeConn = -1
+		input.AccountLimits = &issuance.AccountLimits{
+			Imports:         optionalInt64(al.Imports),
+			Exports:         optionalInt64(al.Exports),
+			WildcardExports: optionalBool(al.WildcardExports),
+			DisallowBearer:  optionalBool(al.DisallowBearer),
+			Connections:     optionalInt64(al.Conn),
+			LeafConnections: optionalInt64(al.LeafNodeConn),
 		}
 	}
-
-	// JetStream limits
 	if !data.JetStreamLimits.IsNull() {
 		var jsLimits []JetStreamLimitsModel
 		diagnostics.Append(data.JetStreamLimits.ElementsAs(ctx, &jsLimits, false)...)
-		if diagnostics.HasError() {
-			return nil, "", fmt.Errorf("failed to read jetstream limits")
-		}
-
 		for _, jsl := range jsLimits {
-			limit := natsjwt.JetStreamLimits{}
-			if !jsl.MemStorage.IsNull() {
-				limit.MemoryStorage = jsl.MemStorage.ValueInt64()
-			}
-			if !jsl.DiskStorage.IsNull() {
-				limit.DiskStorage = jsl.DiskStorage.ValueInt64()
-			}
-			if !jsl.Streams.IsNull() {
-				limit.Streams = jsl.Streams.ValueInt64()
-			} else {
-				limit.Streams = -1
-			}
-			if !jsl.Consumer.IsNull() {
-				limit.Consumer = jsl.Consumer.ValueInt64()
-			} else {
-				limit.Consumer = -1
-			}
-			if !jsl.MaxAckPending.IsNull() {
-				limit.MaxAckPending = jsl.MaxAckPending.ValueInt64()
-			} else {
-				limit.MaxAckPending = -1
-			}
-			if !jsl.MemMaxStreamBytes.IsNull() {
-				limit.MemoryMaxStreamBytes = jsl.MemMaxStreamBytes.ValueInt64()
-			}
-			if !jsl.DiskMaxStreamBytes.IsNull() {
-				limit.DiskMaxStreamBytes = jsl.DiskMaxStreamBytes.ValueInt64()
-			}
-			if !jsl.MaxBytesRequired.IsNull() {
-				limit.MaxBytesRequired = jsl.MaxBytesRequired.ValueBool()
-			}
-
-			tier := jsl.Tier.ValueString()
-			if tier == "" || jsl.Tier.IsNull() {
-				// Global limits
-				claims.Limits.JetStreamLimits = limit
-			} else {
-				// Tiered limits
-				if claims.Limits.JetStreamTieredLimits == nil {
-					claims.Limits.JetStreamTieredLimits = make(map[string]natsjwt.JetStreamLimits)
-				}
-				claims.Limits.JetStreamTieredLimits[tier] = limit
-			}
+			input.JetStreamLimits = append(input.JetStreamLimits, issuance.JetStreamLimits{
+				Tier:                 optionalString(jsl.Tier),
+				MemoryStorage:        optionalInt64(jsl.MemStorage),
+				DiskStorage:          optionalInt64(jsl.DiskStorage),
+				Streams:              optionalInt64(jsl.Streams),
+				Consumers:            optionalInt64(jsl.Consumer),
+				MaxAckPending:        optionalInt64(jsl.MaxAckPending),
+				MemoryMaxStreamBytes: optionalInt64(jsl.MemMaxStreamBytes),
+				DiskMaxStreamBytes:   optionalInt64(jsl.DiskMaxStreamBytes),
+				MaxBytesRequired:     optionalBool(jsl.MaxBytesRequired),
+			})
 		}
 	}
-
-	// Default permissions
 	if !data.DefaultPermissions.IsNull() {
 		var dp DefaultPermissionsModel
 		diagnostics.Append(data.DefaultPermissions.As(ctx, &dp, objectAsOptions)...)
-		if diagnostics.HasError() {
-			return nil, "", fmt.Errorf("failed to read default permissions")
+		input.DefaultPermissions = &issuance.Permissions{
+			Publish: issuance.Permission{
+				Allow: decodeStringList(ctx, dp.PubAllow, diagnostics),
+				Deny:  decodeStringList(ctx, dp.PubDeny, diagnostics),
+			},
+			Subscribe: issuance.Permission{
+				Allow: decodeStringList(ctx, dp.SubAllow, diagnostics),
+				Deny:  decodeStringList(ctx, dp.SubDeny, diagnostics),
+			},
 		}
-		var pubAllow, pubDeny, subAllow, subDeny []string
-		if !dp.PubAllow.IsNull() {
-			diagnostics.Append(dp.PubAllow.ElementsAs(ctx, &pubAllow, false)...)
-		}
-		if !dp.PubDeny.IsNull() {
-			diagnostics.Append(dp.PubDeny.ElementsAs(ctx, &pubDeny, false)...)
-		}
-		if !dp.SubAllow.IsNull() {
-			diagnostics.Append(dp.SubAllow.ElementsAs(ctx, &subAllow, false)...)
-		}
-		if !dp.SubDeny.IsNull() {
-			diagnostics.Append(dp.SubDeny.ElementsAs(ctx, &subDeny, false)...)
-		}
-		if diagnostics.HasError() {
-			return nil, "", fmt.Errorf("failed to read permissions lists")
-		}
-		claims.DefaultPermissions.Pub = buildPermission(pubAllow, pubDeny)
-		claims.DefaultPermissions.Sub = buildPermission(subAllow, subDeny)
 	}
-
-	// Trace
 	if !data.Trace.IsNull() {
 		var t TraceModel
 		diagnostics.Append(data.Trace.As(ctx, &t, objectAsOptions)...)
-		if diagnostics.HasError() {
-			return nil, "", fmt.Errorf("failed to read trace")
-		}
-		if !t.Destination.IsNull() {
-			claims.Trace = &natsjwt.MsgTrace{
-				Destination: natsjwt.Subject(t.Destination.ValueString()),
-			}
-			if !t.Sampling.IsNull() {
-				claims.Trace.Sampling = int(t.Sampling.ValueInt64())
-			}
+		input.Trace = &issuance.Trace{
+			Destination: optionalString(t.Destination),
+			Sampling:    optionalInt64(t.Sampling),
 		}
 	}
-
-	return claims, pub, nil
+	return input
 }

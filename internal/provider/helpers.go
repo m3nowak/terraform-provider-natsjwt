@@ -3,9 +3,7 @@ package provider
 import (
 	"fmt"
 
-	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
-	natsjwt "github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nkeys"
 )
 
@@ -55,35 +53,4 @@ func stringListFromTF(values []string) []string {
 	result := make([]string, 0, len(values))
 	result = append(result, values...)
 	return result
-}
-
-// buildPermission creates a natsjwt.Permission from allow/deny lists.
-func buildPermission(allow, deny []string) natsjwt.Permission {
-	p := natsjwt.Permission{}
-	if len(allow) > 0 {
-		p.Allow = natsjwt.StringList(allow)
-	}
-	if len(deny) > 0 {
-		p.Deny = natsjwt.StringList(deny)
-	}
-	return p
-}
-
-// applyTemporalClaimsDefaults maps Terraform temporal attributes to JWT claims.
-// Defaults are: IssuedAt=0 (Unix epoch), Expires unset (no expiration),
-// and NotBefore=IssuedAt when not provided explicitly.
-func applyTemporalClaimsDefaults(cd *natsjwt.ClaimsData, issuedAt, expires, notBefore types.Int64) {
-	if !issuedAt.IsNull() {
-		cd.IssuedAt = issuedAt.ValueInt64()
-	} else {
-		cd.IssuedAt = 0
-	}
-	if !expires.IsNull() {
-		cd.Expires = expires.ValueInt64()
-	}
-	if !notBefore.IsNull() {
-		cd.NotBefore = notBefore.ValueInt64()
-	} else {
-		cd.NotBefore = cd.IssuedAt
-	}
 }
