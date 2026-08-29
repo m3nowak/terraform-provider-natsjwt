@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
 	"github.com/hashicorp/terraform-plugin-framework/function"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
@@ -13,6 +14,7 @@ import (
 
 var _ provider.Provider = &NatsjwtProvider{}
 var _ provider.ProviderWithFunctions = &NatsjwtProvider{}
+var _ provider.ProviderWithEphemeralResources = &NatsjwtProvider{}
 
 type NatsjwtProvider struct {
 	version string
@@ -76,6 +78,15 @@ func (p *NatsjwtProvider) DataSources(_ context.Context) []func() datasource.Dat
 		NewSystemAccountDataSource,
 		NewUserDataSource,
 		NewConfigHelperDataSource,
+	}
+}
+
+func (p *NatsjwtProvider) EphemeralResources(_ context.Context) []func() ephemeral.EphemeralResource {
+	return []func() ephemeral.EphemeralResource{
+		NewOperatorEphemeralResource,
+		NewAccountEphemeralResource,
+		NewSystemAccountEphemeralResource,
+		NewUserEphemeralResource,
 	}
 }
 

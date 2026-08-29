@@ -7,6 +7,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	schemavalidator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	natsjwt "github.com/nats-io/jwt/v2"
@@ -216,22 +217,28 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	generateUser(ctx, &data, &resp.Diagnostics)
+	if !resp.Diagnostics.HasError() {
+		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	}
+}
 
+func generateUser(ctx context.Context, data *UserDataSourceModel, diagnostics *diag.Diagnostics) {
 	userKP, err := keypairFromSeed(data.Seed.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Invalid User Seed", fmt.Sprintf("Failed to parse user seed: %s", err))
+		diagnostics.AddError("Invalid User Seed", fmt.Sprintf("Failed to parse user seed: %s", err))
 		return
 	}
 
 	userPub, err := userKP.PublicKey()
 	if err != nil {
-		resp.Diagnostics.AddError("Public Key Error", fmt.Sprintf("Failed to get user public key: %s", err))
+		diagnostics.AddError("Public Key Error", fmt.Sprintf("Failed to get user public key: %s", err))
 		return
 	}
 
 	accountKP, err := keypairFromSeed(data.AccountSeed.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Invalid Account Seed", fmt.Sprintf("Failed to parse account seed: %s", err))
+		diagnostics.AddError("Invalid Account Seed", fmt.Sprintf("Failed to parse account seed: %s", err))
 		return
 	}
 
@@ -246,25 +253,25 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	// Permissions
 	if !data.Permissions.IsNull() {
 		var perms UserPermissionsModel
-		resp.Diagnostics.Append(data.Permissions.As(ctx, &perms, objectAsOptions)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.Permissions.As(ctx, &perms, objectAsOptions)...)
+		if diagnostics.HasError() {
 			return
 		}
 
 		var pubAllow, pubDeny, subAllow, subDeny []string
 		if !perms.PubAllow.IsNull() {
-			resp.Diagnostics.Append(perms.PubAllow.ElementsAs(ctx, &pubAllow, false)...)
+			diagnostics.Append(perms.PubAllow.ElementsAs(ctx, &pubAllow, false)...)
 		}
 		if !perms.PubDeny.IsNull() {
-			resp.Diagnostics.Append(perms.PubDeny.ElementsAs(ctx, &pubDeny, false)...)
+			diagnostics.Append(perms.PubDeny.ElementsAs(ctx, &pubDeny, false)...)
 		}
 		if !perms.SubAllow.IsNull() {
-			resp.Diagnostics.Append(perms.SubAllow.ElementsAs(ctx, &subAllow, false)...)
+			diagnostics.Append(perms.SubAllow.ElementsAs(ctx, &subAllow, false)...)
 		}
 		if !perms.SubDeny.IsNull() {
-			resp.Diagnostics.Append(perms.SubDeny.ElementsAs(ctx, &subDeny, false)...)
+			diagnostics.Append(perms.SubDeny.ElementsAs(ctx, &subDeny, false)...)
 		}
-		if resp.Diagnostics.HasError() {
+		if diagnostics.HasError() {
 			return
 		}
 
@@ -279,7 +286,7 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 			if !perms.RespTTL.IsNull() {
 				ttl, err := time.ParseDuration(perms.RespTTL.ValueString())
 				if err != nil {
-					resp.Diagnostics.AddError("Invalid Duration", fmt.Sprintf("Failed to parse resp_ttl: %s", err))
+					diagnostics.AddError("Invalid Duration", fmt.Sprintf("Failed to parse resp_ttl: %s", err))
 					return
 				}
 				claims.Resp.Expires = ttl
@@ -290,8 +297,8 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	// Limits
 	if !data.Limits.IsNull() {
 		var limits UserLimitsModel
-		resp.Diagnostics.Append(data.Limits.As(ctx, &limits, objectAsOptions)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.Limits.As(ctx, &limits, objectAsOptions)...)
+		if diagnostics.HasError() {
 			return
 		}
 		if !limits.Subs.IsNull() {
@@ -319,8 +326,8 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	// Allowed connection types
 	if !data.AllowedConnectionTypes.IsNull() {
 		var connTypes []string
-		resp.Diagnostics.Append(data.AllowedConnectionTypes.ElementsAs(ctx, &connTypes, false)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.AllowedConnectionTypes.ElementsAs(ctx, &connTypes, false)...)
+		if diagnostics.HasError() {
 			return
 		}
 		claims.AllowedConnectionTypes = connTypes
@@ -329,8 +336,8 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	// Source networks
 	if !data.SourceNetworks.IsNull() {
 		var networks []string
-		resp.Diagnostics.Append(data.SourceNetworks.ElementsAs(ctx, &networks, false)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.SourceNetworks.ElementsAs(ctx, &networks, false)...)
+		if diagnostics.HasError() {
 			return
 		}
 		claims.Src = networks
@@ -339,8 +346,8 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	// Time restrictions
 	if !data.TimeRestrictions.IsNull() {
 		var timeRanges []TimeRangeModel
-		resp.Diagnostics.Append(data.TimeRestrictions.ElementsAs(ctx, &timeRanges, false)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.TimeRestrictions.ElementsAs(ctx, &timeRanges, false)...)
+		if diagnostics.HasError() {
 			return
 		}
 		for _, tr := range timeRanges {
@@ -359,8 +366,8 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	// Tags
 	if !data.Tags.IsNull() {
 		var tags []string
-		resp.Diagnostics.Append(data.Tags.ElementsAs(ctx, &tags, false)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.Tags.ElementsAs(ctx, &tags, false)...)
+		if diagnostics.HasError() {
 			return
 		}
 		claims.Tags = tags
@@ -368,17 +375,16 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 
 	jwtString, err := encodeDeterministic(claims, accountKP)
 	if err != nil {
-		resp.Diagnostics.AddError("JWT Encoding Error", fmt.Sprintf("Failed to encode user JWT: %s", err))
+		diagnostics.AddError("JWT Encoding Error", fmt.Sprintf("Failed to encode user JWT: %s", err))
 		return
 	}
 	credsBytes, err := natsjwt.FormatUserConfig(jwtString, []byte(data.Seed.ValueString()))
 	if err != nil {
-		resp.Diagnostics.AddError("Credentials Encoding Error", fmt.Sprintf("Failed to encode user credentials: %s", err))
+		diagnostics.AddError("Credentials Encoding Error", fmt.Sprintf("Failed to encode user credentials: %s", err))
 		return
 	}
 
 	data.PublicKey = types.StringValue(userPub)
 	data.JWT = types.StringValue(jwtString)
 	data.Creds = types.StringValue(string(credsBytes))
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

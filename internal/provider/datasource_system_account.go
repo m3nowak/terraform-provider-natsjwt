@@ -2,10 +2,8 @@ package provider
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
-	"github.com/hashicorp/terraform-plugin-framework/types"
 	natsjwt "github.com/nats-io/jwt/v2"
 )
 
@@ -32,29 +30,10 @@ func (d *SystemAccountDataSource) Read(ctx context.Context, req datasource.ReadR
 		return
 	}
 
-	claims, pub, err := buildAccountClaims(ctx, data, resp)
-	if err != nil || resp.Diagnostics.HasError() {
-		return
+	generateAccount(ctx, &data, true, &resp.Diagnostics)
+	if !resp.Diagnostics.HasError() {
+		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 	}
-
-	// Apply system account defaults: add $SYS.> public service export if no exports are defined
-	applySystemAccountDefaults(claims)
-
-	operatorKP, err := keypairFromSeed(data.OperatorSeed.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Invalid Operator Seed", fmt.Sprintf("Failed to parse operator seed: %s", err))
-		return
-	}
-
-	jwtString, err := encodeDeterministic(claims, operatorKP)
-	if err != nil {
-		resp.Diagnostics.AddError("JWT Encoding Error", fmt.Sprintf("Failed to encode system account JWT: %s", err))
-		return
-	}
-
-	data.PublicKey = types.StringValue(pub)
-	data.JWT = types.StringValue(jwtString)
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func applySystemAccountDefaults(claims *natsjwt.AccountClaims) {
@@ -68,10 +47,10 @@ func applySystemAccountDefaults(claims *natsjwt.AccountClaims) {
 	}
 	if !hasSysExport {
 		claims.Exports = append(claims.Exports, &natsjwt.Export{
-			Name:    "account-monitoring-services",
-			Subject: "$SYS.REQ.ACCOUNT.*.*",
-			Type:    natsjwt.Service,
-			ResponseType: natsjwt.ResponseTypeStream,
+			Name:                 "account-monitoring-services",
+			Subject:              "$SYS.REQ.ACCOUNT.*.*",
+			Type:                 natsjwt.Service,
+			ResponseType:         natsjwt.ResponseTypeStream,
 			AccountTokenPosition: 4,
 			Info: natsjwt.Info{
 				Description: "Request account specific monitoring services for: SUBSZ, CONNZ, LEAFZ, JSZ and INFO",
@@ -79,9 +58,9 @@ func applySystemAccountDefaults(claims *natsjwt.AccountClaims) {
 			},
 		})
 		claims.Exports = append(claims.Exports, &natsjwt.Export{
-			Name:    "account-monitoring-streams",
-			Subject: "$SYS.ACCOUNT.*.>",
-			Type:    natsjwt.Stream,
+			Name:                 "account-monitoring-streams",
+			Subject:              "$SYS.ACCOUNT.*.>",
+			Type:                 natsjwt.Stream,
 			AccountTokenPosition: 3,
 			Info: natsjwt.Info{
 				Description: "Account specific monitoring stream",

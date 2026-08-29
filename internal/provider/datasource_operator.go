@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	natsjwt "github.com/nats-io/jwt/v2"
@@ -111,16 +112,22 @@ func (d *OperatorDataSource) Read(ctx context.Context, req datasource.ReadReques
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	generateOperator(ctx, &data, &resp.Diagnostics)
+	if !resp.Diagnostics.HasError() {
+		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	}
+}
 
+func generateOperator(ctx context.Context, data *OperatorDataSourceModel, diagnostics *diag.Diagnostics) {
 	kp, err := keypairFromSeed(data.Seed.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Invalid Seed", fmt.Sprintf("Failed to parse operator seed: %s", err))
+		diagnostics.AddError("Invalid Seed", fmt.Sprintf("Failed to parse operator seed: %s", err))
 		return
 	}
 
 	pub, err := kp.PublicKey()
 	if err != nil {
-		resp.Diagnostics.AddError("Public Key Error", fmt.Sprintf("Failed to get public key: %s", err))
+		diagnostics.AddError("Public Key Error", fmt.Sprintf("Failed to get public key: %s", err))
 		return
 	}
 
@@ -129,8 +136,8 @@ func (d *OperatorDataSource) Read(ctx context.Context, req datasource.ReadReques
 
 	if !data.SigningKeys.IsNull() {
 		var signingKeys []string
-		resp.Diagnostics.Append(data.SigningKeys.ElementsAs(ctx, &signingKeys, false)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.SigningKeys.ElementsAs(ctx, &signingKeys, false)...)
+		if diagnostics.HasError() {
 			return
 		}
 		for _, sk := range signingKeys {
@@ -144,8 +151,8 @@ func (d *OperatorDataSource) Read(ctx context.Context, req datasource.ReadReques
 
 	if !data.OperatorServiceURLs.IsNull() {
 		var urls []string
-		resp.Diagnostics.Append(data.OperatorServiceURLs.ElementsAs(ctx, &urls, false)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.OperatorServiceURLs.ElementsAs(ctx, &urls, false)...)
+		if diagnostics.HasError() {
 			return
 		}
 		claims.OperatorServiceURLs = urls
@@ -162,8 +169,8 @@ func (d *OperatorDataSource) Read(ctx context.Context, req datasource.ReadReques
 
 	if !data.Tags.IsNull() {
 		var tags []string
-		resp.Diagnostics.Append(data.Tags.ElementsAs(ctx, &tags, false)...)
-		if resp.Diagnostics.HasError() {
+		diagnostics.Append(data.Tags.ElementsAs(ctx, &tags, false)...)
+		if diagnostics.HasError() {
 			return
 		}
 		claims.Tags = tags
@@ -171,12 +178,10 @@ func (d *OperatorDataSource) Read(ctx context.Context, req datasource.ReadReques
 
 	jwtString, err := encodeDeterministic(claims, kp)
 	if err != nil {
-		resp.Diagnostics.AddError("JWT Encoding Error", fmt.Sprintf("Failed to encode operator JWT: %s", err))
+		diagnostics.AddError("JWT Encoding Error", fmt.Sprintf("Failed to encode operator JWT: %s", err))
 		return
 	}
 
 	data.PublicKey = types.StringValue(pub)
 	data.JWT = types.StringValue(jwtString)
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
