@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -12,16 +13,16 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
-	"github.com/m3nowak/terraform-provider-natsjwt/internal/issuance"
 	natsjwt "github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nkeys"
 )
 
-// mockNatsRequester is a test double for NatsRequester.
 type mockNatsRequester struct {
 	requests []mockRequest
+	calls    []mockRequest
 	index    int
+	closed   bool
 }
 
 type mockRequest struct {
@@ -29,294 +30,291 @@ type mockRequest struct {
 	Data     []byte
 	Response *nats.Msg
 	Err      error
+	Timeout  time.Duration
 }
 
 func (m *mockNatsRequester) Request(subj string, data []byte, timeout time.Duration) (*nats.Msg, error) {
+	m.calls = append(m.calls, mockRequest{Subject: subj, Data: append([]byte(nil), data...), Timeout: timeout})
 	if m.index >= len(m.requests) {
 		return nil, fmt.Errorf("unexpected request to %s", subj)
 	}
-	req := m.requests[m.index]
+	request := m.requests[m.index]
 	m.index++
-	if req.Subject != "" && req.Subject != subj {
-		return nil, fmt.Errorf("expected subject %s, got %s", req.Subject, subj)
+	if request.Subject != "" && request.Subject != subj {
+		return nil, fmt.Errorf("expected subject %s, got %s", request.Subject, subj)
 	}
-	return req.Response, req.Err
+	return request.Response, request.Err
 }
 
-func (m *mockNatsRequester) Close() {}
+func (m *mockNatsRequester) Close() {
+	m.closed = true
+}
 
 func testAccountJWT(t *testing.T) string {
 	t.Helper()
-	opKP, err := nkeys.CreateOperator()
+	operatorKP, err := nkeys.CreateOperator()
 	if err != nil {
 		t.Fatal(err)
 	}
-	acctKP, err := nkeys.CreateAccount()
+	accountKP, err := nkeys.CreateAccount()
 	if err != nil {
 		t.Fatal(err)
 	}
-	pub, err := acctKP.PublicKey()
+	publicKey, err := accountKP.PublicKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	claims := natsjwt.NewAccountClaims(pub)
+	claims := natsjwt.NewAccountClaims(publicKey)
 	claims.Name = "test-acct"
-	jwt, err := claims.Encode(opKP)
+	jwtStr, err := claims.Encode(operatorKP)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return jwt
+	return jwtStr
 }
 
-func TestResolverAccountResource_pushJWT_Success(t *testing.T) {
+func TestResolverAccountResourceCreateAndUpdate(t *testing.T) {
 	jwtStr := testAccountJWT(t)
-	claims, _ := natsjwt.DecodeAccountClaims(jwtStr)
-
-	mock := &mockNatsRequester{
-		requests: []mockRequest{
-			{
-				Subject: fmt.Sprintf("$SYS.REQ.ACCOUNT.%s.CLAIMS.UPDATE", claims.Subject),
-				Response: &nats.Msg{
-					Data: mustJSON(updateResponse{
-						Data: &updateData{Account: claims.Subject, Code: 200, Message: "jwt updated"},
-					}),
-				},
-			},
-		},
-	}
-
-	var diags diag.Diagnostics
-	r := &ResolverAccountResource{}
-	err := r.pushJWT(mock, jwtStr, &diags)
+	claims, err := natsjwt.DecodeAccountClaims(jwtStr)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if diags.HasError() {
-		t.Fatalf("unexpected diagnostics: %v", diags)
+
+	for _, operation := range []string{"create", "update"} {
+		t.Run(operation, func(t *testing.T) {
+			requester := successfulMutationRequester(claims.Subject)
+			resolver := &ResolverAccountResource{testConnOverride: requester}
+			plan := buildResolverAccountPlan(t, resolver, jwtStr, nil)
+
+			switch operation {
+			case "create":
+				response := resource.CreateResponse{State: emptyResolverAccountState(t, resolver)}
+				resolver.Create(context.Background(), resource.CreateRequest{Plan: plan}, &response)
+				assertNoDiagnosticErrors(t, response.Diagnostics)
+				assertResolverAccountState(t, response.State, jwtStr)
+			case "update":
+				response := resource.UpdateResponse{State: emptyResolverAccountState(t, resolver)}
+				resolver.Update(context.Background(), resource.UpdateRequest{Plan: plan}, &response)
+				assertNoDiagnosticErrors(t, response.Diagnostics)
+				assertResolverAccountState(t, response.State, jwtStr)
+			}
+
+			assertRequest(t, requester, 0, fmt.Sprintf("$SYS.REQ.ACCOUNT.%s.CLAIMS.UPDATE", claims.Subject), []byte(jwtStr))
+			if !requester.closed {
+				t.Fatal("expected NATS requester to be closed")
+			}
+		})
 	}
 }
 
-func TestResolverAccountResource_pushJWT_ErrorResponse(t *testing.T) {
+func TestResolverAccountResourceMutationFailurePreservesStateBehavior(t *testing.T) {
+	for _, operation := range []string{"create", "update"} {
+		t.Run(operation, func(t *testing.T) {
+			requester := &mockNatsRequester{requests: []mockRequest{{
+				Response: &nats.Msg{Data: mustJSON(resolverMutationResponse{Error: &resolverMutationError{Code: 500, Description: "bad jwt"}})},
+			}}}
+			resolver := &ResolverAccountResource{testConnOverride: requester}
+			jwtStr := testAccountJWT(t)
+			plan := buildResolverAccountPlan(t, resolver, jwtStr, nil)
+
+			if operation == "create" {
+				response := resource.CreateResponse{State: emptyResolverAccountState(t, resolver)}
+				resolver.Create(context.Background(), resource.CreateRequest{Plan: plan}, &response)
+				assertDiagnostic(t, response.Diagnostics, diag.SeverityError, "Update Failed")
+				if response.State.Raw.Type() != nil {
+					t.Fatal("expected failed create to leave state unset")
+				}
+				return
+			}
+
+			oldJWT := testAccountJWT(t)
+			state := buildResolverAccountState(t, resolver, oldJWT, nil)
+			response := resource.UpdateResponse{State: state}
+			resolver.Update(context.Background(), resource.UpdateRequest{Plan: plan}, &response)
+			assertDiagnostic(t, response.Diagnostics, diag.SeverityError, "Update Failed")
+			assertResolverAccountState(t, response.State, oldJWT)
+		})
+	}
+}
+
+func TestResolverAccountResourceReadOutcomes(t *testing.T) {
 	jwtStr := testAccountJWT(t)
-	claims, _ := natsjwt.DecodeAccountClaims(jwtStr)
-
-	mock := &mockNatsRequester{
-		requests: []mockRequest{
-			{
-				Subject: fmt.Sprintf("$SYS.REQ.ACCOUNT.%s.CLAIMS.UPDATE", claims.Subject),
-				Response: &nats.Msg{
-					Data: mustJSON(updateResponse{
-						Error: &updateError{Code: 500, Description: "bad jwt"},
-					}),
-				},
-			},
-		},
+	tests := map[string]struct {
+		response   *nats.Msg
+		err        error
+		removed    bool
+		diagnostic string
+	}{
+		"matching":     {response: &nats.Msg{Data: []byte(jwtStr)}},
+		"drifted":      {response: &nats.Msg{Data: []byte(testAccountJWT(t))}, removed: true},
+		"missing":      {response: &nats.Msg{}, removed: true},
+		"no responder": {err: nats.ErrNoResponders, removed: true},
+		"failed":       {err: errors.New("lookup failed"), diagnostic: "Failed to read account claims"},
 	}
 
-	var diags diag.Diagnostics
-	r := &ResolverAccountResource{}
-	err := r.pushJWT(mock, jwtStr, &diags)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !diags.HasError() {
-		t.Fatal("expected diagnostics error")
-	}
-}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			requester := &mockNatsRequester{requests: []mockRequest{{Response: test.response, Err: test.err}}}
+			resolver := &ResolverAccountResource{testConnOverride: requester}
+			state := buildResolverAccountState(t, resolver, jwtStr, nil)
+			response := resource.ReadResponse{State: state}
+			resolver.Read(context.Background(), resource.ReadRequest{State: state}, &response)
 
-func buildReadState(t *testing.T, r *ResolverAccountResource, jwtStr string) tfsdk.State {
-	t.Helper()
-	ctx := context.Background()
-	schemaResp := resource.SchemaResponse{}
-	r.Schema(ctx, resource.SchemaRequest{}, &schemaResp)
-	stateVal := tftypes.NewValue(
-		tftypes.Object{
-			AttributeTypes: map[string]tftypes.Type{
-				"jwt":           tftypes.String,
-				"operator_seed": tftypes.String,
-			},
-		},
-		map[string]tftypes.Value{
-			"jwt":           tftypes.NewValue(tftypes.String, jwtStr),
-			"operator_seed": tftypes.NewValue(tftypes.String, nil),
-		},
-	)
-	return tfsdk.State{
-		Raw:    stateVal,
-		Schema: schemaResp.Schema,
+			if test.diagnostic != "" {
+				assertDiagnostic(t, response.Diagnostics, diag.SeverityError, test.diagnostic)
+			} else {
+				assertNoDiagnosticErrors(t, response.Diagnostics)
+			}
+			if response.State.Raw.IsNull() != test.removed {
+				t.Fatalf("expected removed=%t, state null=%t", test.removed, response.State.Raw.IsNull())
+			}
+			if name == "matching" {
+				assertResolverAccountState(t, response.State, jwtStr)
+			}
+			if !requester.closed {
+				t.Fatal("expected NATS requester to be closed")
+			}
+		})
 	}
 }
 
-func TestResolverAccountResource_ReadDrift(t *testing.T) {
+func TestResolverAccountResourceDelete(t *testing.T) {
 	jwtStr := testAccountJWT(t)
-	claims, _ := natsjwt.DecodeAccountClaims(jwtStr)
-
-	// Return a different JWT on lookup to simulate drift.
-	otherJWT := testAccountJWT(t)
-	mock := &mockNatsRequester{
-		requests: []mockRequest{
-			{
-				Subject: fmt.Sprintf("$SYS.REQ.ACCOUNT.%s.CLAIMS.LOOKUP", claims.Subject),
-				Response: &nats.Msg{
-					Data: []byte(otherJWT),
-				},
-			},
-		},
+	operatorKP, err := nkeys.CreateOperator()
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	r := &ResolverAccountResource{testConnOverride: mock}
-	ctx := context.Background()
-	state := buildReadState(t, r, jwtStr)
-	req := resource.ReadRequest{State: state}
-	resp := resource.ReadResponse{State: state}
-
-	r.Read(ctx, req, &resp)
-
-	if resp.Diagnostics.HasError() {
-		t.Fatalf("unexpected diagnostics: %v", resp.Diagnostics)
+	operatorSeed, err := operatorKP.Seed()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !resp.State.Raw.IsNull() {
-		t.Fatal("expected resource to be removed from state on JWT drift")
-	}
+	operatorSeedString := string(operatorSeed)
+
+	t.Run("deletes with operator seed", func(t *testing.T) {
+		requester := successfulMutationRequester("")
+		resolver := &ResolverAccountResource{testConnOverride: requester}
+		state := buildResolverAccountState(t, resolver, jwtStr, &operatorSeedString)
+		response := resource.DeleteResponse{}
+		resolver.Delete(context.Background(), resource.DeleteRequest{State: state}, &response)
+
+		assertNoDiagnosticErrors(t, response.Diagnostics)
+		assertRequestSubjectAndTimeout(t, requester, 0, "$SYS.REQ.CLAIMS.DELETE")
+		if !requester.closed {
+			t.Fatal("expected NATS requester to be closed")
+		}
+	})
+
+	t.Run("warns without operator seed", func(t *testing.T) {
+		requester := &mockNatsRequester{}
+		resolver := &ResolverAccountResource{testConnOverride: requester}
+		state := buildResolverAccountState(t, resolver, jwtStr, nil)
+		response := resource.DeleteResponse{}
+		resolver.Delete(context.Background(), resource.DeleteRequest{State: state}, &response)
+
+		assertDiagnostic(t, response.Diagnostics, diag.SeverityWarning, "Account Not Deleted from Server")
+		if len(requester.calls) != 0 {
+			t.Fatalf("expected no NATS requests, got %d", len(requester.calls))
+		}
+	})
+
+	t.Run("reports server failure", func(t *testing.T) {
+		requester := &mockNatsRequester{requests: []mockRequest{{
+			Response: &nats.Msg{Data: mustJSON(resolverMutationResponse{Error: &resolverMutationError{Code: 500, Description: "delete disabled"}})},
+		}}}
+		resolver := &ResolverAccountResource{testConnOverride: requester}
+		state := buildResolverAccountState(t, resolver, jwtStr, &operatorSeedString)
+		response := resource.DeleteResponse{}
+		resolver.Delete(context.Background(), resource.DeleteRequest{State: state}, &response)
+
+		assertDiagnostic(t, response.Diagnostics, diag.SeverityError, "Delete Failed")
+	})
 }
 
-func TestResolverAccountResource_ReadNotFound(t *testing.T) {
-	jwtStr := testAccountJWT(t)
-	claims, _ := natsjwt.DecodeAccountClaims(jwtStr)
-
-	mock := &mockNatsRequester{
-		requests: []mockRequest{
-			{
-				Subject:  fmt.Sprintf("$SYS.REQ.ACCOUNT.%s.CLAIMS.LOOKUP", claims.Subject),
-				Response: &nats.Msg{Data: []byte{}},
-			},
-		},
-	}
-
-	r := &ResolverAccountResource{testConnOverride: mock}
-	ctx := context.Background()
-	state := buildReadState(t, r, jwtStr)
-	req := resource.ReadRequest{State: state}
-	resp := resource.ReadResponse{State: state}
-
-	r.Read(ctx, req, &resp)
-
-	if resp.Diagnostics.HasError() {
-		t.Fatalf("unexpected diagnostics: %v", resp.Diagnostics)
-	}
-	if !resp.State.Raw.IsNull() {
-		t.Fatal("expected resource to be removed from state when account is not found")
-	}
-}
-
-func TestResolverAccountResource_DeleteWithoutOperatorSeed(t *testing.T) {
-	data := ResolverAccountResourceModel{JWT: types.StringValue(testAccountJWT(t))}
-	if !data.OperatorSeed.IsNull() {
-		t.Fatal("expected null operator_seed")
-	}
-}
-
-func TestResolverAccountResource_MissingNatsUrl(t *testing.T) {
-	r := &ResolverAccountResource{
-		providerData: &NatsjwtProviderData{},
-	}
-	_, diags := r.getConnection()
-	if !diags.HasError() {
+func TestResolverAccountResourceMissingNatsURL(t *testing.T) {
+	resolver := &ResolverAccountResource{providerData: &NatsjwtProviderData{}}
+	_, diagnostics := resolver.getConnection()
+	if !diagnostics.HasError() {
 		t.Fatal("expected error for missing nats_url")
 	}
 }
 
-func TestResolverAccountResource_CreateIntegration(t *testing.T) {
-	jwtStr := testAccountJWT(t)
-	claims, _ := natsjwt.DecodeAccountClaims(jwtStr)
+func successfulMutationRequester(account string) *mockNatsRequester {
+	return &mockNatsRequester{requests: []mockRequest{{
+		Response: &nats.Msg{Data: mustJSON(resolverMutationResponse{
+			Data: &resolverMutationData{Account: account, Code: 200, Message: "ok"},
+		})},
+	}}}
+}
 
-	mock := &mockNatsRequester{
-		requests: []mockRequest{
-			{
-				Subject: fmt.Sprintf("$SYS.REQ.ACCOUNT.%s.CLAIMS.UPDATE", claims.Subject),
-				Response: &nats.Msg{
-					Data: mustJSON(updateResponse{
-						Data: &updateData{Account: claims.Subject, Code: 200, Message: "jwt updated"},
-					}),
-				},
-			},
+func resolverAccountSchema(t *testing.T, resolver *ResolverAccountResource) resource.SchemaResponse {
+	t.Helper()
+	response := resource.SchemaResponse{}
+	resolver.Schema(context.Background(), resource.SchemaRequest{}, &response)
+	return response
+}
+
+func resolverAccountValue(jwtStr string, operatorSeed *string) tftypes.Value {
+	var operatorSeedValue interface{}
+	if operatorSeed != nil {
+		operatorSeedValue = *operatorSeed
+	}
+	return tftypes.NewValue(
+		tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+			"jwt": tftypes.String, "operator_seed": tftypes.String,
+		}},
+		map[string]tftypes.Value{
+			"jwt":           tftypes.NewValue(tftypes.String, jwtStr),
+			"operator_seed": tftypes.NewValue(tftypes.String, operatorSeedValue),
 		},
-	}
+	)
+}
 
-	r := &ResolverAccountResource{
-		providerData: &NatsjwtProviderData{
-			NatsUrl: types.StringValue("nats://localhost:4222"),
-		},
-	}
+func buildResolverAccountPlan(t *testing.T, resolver *ResolverAccountResource, jwtStr string, operatorSeed *string) tfsdk.Plan {
+	t.Helper()
+	return tfsdk.Plan{Raw: resolverAccountValue(jwtStr, operatorSeed), Schema: resolverAccountSchema(t, resolver).Schema}
+}
 
-	// We test the pushJWT path which is the core of Create.
-	var diags diag.Diagnostics
-	err := r.pushJWT(mock, jwtStr, &diags)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if diags.HasError() {
-		t.Fatalf("unexpected diagnostics: %v", diags)
+func buildResolverAccountState(t *testing.T, resolver *ResolverAccountResource, jwtStr string, operatorSeed *string) tfsdk.State {
+	t.Helper()
+	return tfsdk.State{Raw: resolverAccountValue(jwtStr, operatorSeed), Schema: resolverAccountSchema(t, resolver).Schema}
+}
+
+func emptyResolverAccountState(t *testing.T, resolver *ResolverAccountResource) tfsdk.State {
+	t.Helper()
+	return tfsdk.State{Schema: resolverAccountSchema(t, resolver).Schema}
+}
+
+func assertResolverAccountState(t *testing.T, state tfsdk.State, jwtStr string) {
+	t.Helper()
+	var model ResolverAccountResourceModel
+	diagnostics := state.Get(context.Background(), &model)
+	assertNoDiagnosticErrors(t, diagnostics)
+	if model.JWT != types.StringValue(jwtStr) {
+		t.Fatalf("expected JWT to be retained in state")
 	}
 }
 
-func TestEncodeDeterministicGenericClaims(t *testing.T) {
-	jwtStr := testAccountJWT(t)
-	claims, _ := natsjwt.DecodeAccountClaims(jwtStr)
-
-	opKP, err := nkeys.CreateOperator()
-	if err != nil {
-		t.Fatal(err)
+func assertNoDiagnosticErrors(t *testing.T, diagnostics diag.Diagnostics) {
+	t.Helper()
+	if diagnostics.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diagnostics)
 	}
-	pub, _ := opKP.PublicKey()
+}
 
-	newClaims := func() *natsjwt.GenericClaims {
-		genClaims := natsjwt.NewGenericClaims(claims.Subject)
-		genClaims.Issuer = claims.Subject
-		genClaims.IssuedAt = 100
-		genClaims.Expires = 200
-		genClaims.NotBefore = 50
-		genClaims.Data = map[string]interface{}{
-			"accounts": []string{claims.Subject},
+func assertDiagnostic(t *testing.T, diagnostics diag.Diagnostics, severity diag.Severity, summary string) {
+	t.Helper()
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity() == severity && diagnostic.Summary() == summary {
+			return
 		}
-		return genClaims
 	}
-
-	jwt, err := issuance.EncodeDeterministic(newClaims(), opKP)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	repeatedJWT, err := issuance.EncodeDeterministic(newClaims(), opKP)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if repeatedJWT != jwt {
-		t.Fatal("equivalent generic claims produced different JWTs")
-	}
-
-	decoded, err := natsjwt.DecodeGeneric(jwt)
-	if err != nil {
-		t.Fatalf("failed to decode generic jwt: %v", err)
-	}
-	if decoded.Issuer != pub {
-		t.Fatalf("expected issuer %s, got %s", pub, decoded.Issuer)
-	}
-	if decoded.Data["version"] != float64(2) {
-		t.Fatalf("expected version 2, got %v", decoded.Data["version"])
-	}
-	if decoded.IssuedAt != 100 || decoded.Expires != 200 || decoded.NotBefore != 50 {
-		t.Fatalf("temporal claims changed: iat=%d exp=%d nbf=%d", decoded.IssuedAt, decoded.Expires, decoded.NotBefore)
-	}
-	accounts, ok := decoded.Data["accounts"].([]interface{})
-	if !ok || len(accounts) != 1 || accounts[0] != claims.Subject {
-		t.Fatalf("unexpected accounts data: %v", decoded.Data["accounts"])
-	}
+	t.Fatalf("expected %s diagnostic %q, got %v", severity, summary, diagnostics)
 }
 
-func mustJSON(v interface{}) []byte {
-	b, err := json.Marshal(v)
+func mustJSON(value interface{}) []byte {
+	data, err := json.Marshal(value)
 	if err != nil {
 		panic(err)
 	}
-	return b
+	return data
 }

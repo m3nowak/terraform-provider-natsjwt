@@ -2,7 +2,7 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,8 +11,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/m3nowak/terraform-provider-natsjwt/internal/issuance"
-	natsjwt "github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nkeys"
 )
@@ -103,25 +101,6 @@ func (r *ResolverAccountResource) getConnection() (NatsRequester, diag.Diagnosti
 	return nc, diags
 }
 
-// updateResponse matches the JSON structure returned by NATS on $SYS.REQ.CLAIMS.UPDATE.
-type updateResponse struct {
-	Server map[string]interface{} `json:"server,omitempty"`
-	Data   *updateData            `json:"data,omitempty"`
-	Error  *updateError           `json:"error,omitempty"`
-}
-
-type updateData struct {
-	Account string `json:"account,omitempty"`
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-type updateError struct {
-	Account     string `json:"account,omitempty"`
-	Code        int    `json:"code"`
-	Description string `json:"description"`
-}
-
 func (r *ResolverAccountResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var data ResolverAccountResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
@@ -136,7 +115,8 @@ func (r *ResolverAccountResource) Create(ctx context.Context, req resource.Creat
 	}
 	defer nc.Close()
 
-	if err := r.pushJWT(nc, data.JWT.ValueString(), &resp.Diagnostics); err != nil {
+	if err := newResolverAccountProtocol(nc).Update(data.JWT.ValueString()); err != nil {
+		addResolverUpdateDiagnostic(&resp.Diagnostics, err)
 		return
 	}
 
@@ -157,33 +137,12 @@ func (r *ResolverAccountResource) Read(ctx context.Context, req resource.ReadReq
 	}
 	defer nc.Close()
 
-	claims, err := natsjwt.DecodeAccountClaims(data.JWT.ValueString())
+	outcome, err := newResolverAccountProtocol(nc).Lookup(data.JWT.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Invalid JWT", fmt.Sprintf("Failed to decode account JWT: %s", err))
+		addResolverReadDiagnostic(&resp.Diagnostics, err)
 		return
 	}
-
-	lookupSubj := fmt.Sprintf("$SYS.REQ.ACCOUNT.%s.CLAIMS.LOOKUP", claims.Subject)
-	msg, err := nc.Request(lookupSubj, nil, 5*time.Second)
-	if err != nil {
-		if err == nats.ErrNoResponders {
-			resp.State.RemoveResource(ctx)
-			return
-		}
-
-		resp.Diagnostics.AddError(
-			"Failed to read account claims",
-			fmt.Sprintf("Failed to request account claims for subject %q: %s", claims.Subject, err),
-		)
-		return
-	}
-	if len(msg.Data) == 0 {
-		resp.State.RemoveResource(ctx)
-		return
-	}
-
-	// Compare the returned JWT with the stored one.
-	if string(msg.Data) != data.JWT.ValueString() {
+	if outcome != resolverAccountFound {
 		resp.State.RemoveResource(ctx)
 		return
 	}
@@ -205,7 +164,8 @@ func (r *ResolverAccountResource) Update(ctx context.Context, req resource.Updat
 	}
 	defer nc.Close()
 
-	if err := r.pushJWT(nc, data.JWT.ValueString(), &resp.Diagnostics); err != nil {
+	if err := newResolverAccountProtocol(nc).Update(data.JWT.ValueString()); err != nil {
+		addResolverUpdateDiagnostic(&resp.Diagnostics, err)
 		return
 	}
 
@@ -234,75 +194,64 @@ func (r *ResolverAccountResource) Delete(ctx context.Context, req resource.Delet
 	}
 	defer nc.Close()
 
-	claims, err := natsjwt.DecodeAccountClaims(data.JWT.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Invalid JWT", fmt.Sprintf("Failed to decode account JWT: %s", err))
-		return
-	}
-
-	operatorKP, err := keypairFromSeed(data.OperatorSeed.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Invalid Operator Seed", fmt.Sprintf("Failed to parse operator seed: %s", err))
-		return
-	}
-
-	// Build a generic delete request claim for this account.
-	genClaims := natsjwt.NewGenericClaims(claims.Subject)
-	genClaims.Data = map[string]interface{}{
-		"accounts": []string{claims.Subject},
-	}
-
-	deleteJWT, err := issuance.EncodeDeterministic(genClaims, operatorKP)
-	if err != nil {
-		resp.Diagnostics.AddError("JWT Encoding Error", fmt.Sprintf("Failed to encode delete request JWT: %s", err))
-		return
-	}
-
-	msg, err := nc.Request("$SYS.REQ.CLAIMS.DELETE", []byte(deleteJWT), 5*time.Second)
-	if err != nil {
-		resp.Diagnostics.AddError("NATS Request Error", fmt.Sprintf("Failed to send delete request: %s", err))
-		return
-	}
-
-	var ur updateResponse
-	if err := json.Unmarshal(msg.Data, &ur); err != nil {
-		resp.Diagnostics.AddError("Response Parse Error", fmt.Sprintf("Failed to parse delete response: %s", err))
-		return
-	}
-	if ur.Error != nil {
-		resp.Diagnostics.AddError(
-			"Delete Failed",
-			fmt.Sprintf("Server returned error (code %d): %s", ur.Error.Code, ur.Error.Description),
-		)
+	if err := newResolverAccountProtocol(nc).Delete(data.JWT.ValueString(), data.OperatorSeed.ValueString()); err != nil {
+		addResolverDeleteDiagnostic(&resp.Diagnostics, err)
 		return
 	}
 }
 
-func (r *ResolverAccountResource) pushJWT(nc NatsRequester, jwtStr string, diags *diag.Diagnostics) error {
-	claims, err := natsjwt.DecodeAccountClaims(jwtStr)
-	if err != nil {
-		diags.AddError("Invalid JWT", fmt.Sprintf("Failed to decode account JWT: %s", err))
-		return err
+func addResolverUpdateDiagnostic(diags *diag.Diagnostics, err error) {
+	protocolErr := resolverProtocolError(err)
+	switch protocolErr.kind {
+	case resolverAccountInvalidJWTError:
+		diags.AddError("Invalid JWT", fmt.Sprintf("Failed to decode account JWT: %s", protocolErr.err))
+	case resolverAccountRequestError:
+		diags.AddError("NATS Request Error", fmt.Sprintf("Failed to send update request: %s", protocolErr.err))
+	case resolverAccountResponseParseError:
+		diags.AddError("Response Parse Error", fmt.Sprintf("Failed to parse update response: %s", protocolErr.err))
+	case resolverAccountServerError:
+		diags.AddError("Update Failed", fmt.Sprintf("Server returned error (code %d): %s", protocolErr.code, protocolErr.description))
+	default:
+		diags.AddError("Update Failed", err.Error())
 	}
+}
 
-	updateSubj := fmt.Sprintf("$SYS.REQ.ACCOUNT.%s.CLAIMS.UPDATE", claims.Subject)
-	msg, err := nc.Request(updateSubj, []byte(jwtStr), 5*time.Second)
-	if err != nil {
-		diags.AddError("NATS Request Error", fmt.Sprintf("Failed to send update request: %s", err))
-		return err
+func addResolverReadDiagnostic(diags *diag.Diagnostics, err error) {
+	protocolErr := resolverProtocolError(err)
+	if protocolErr.kind == resolverAccountInvalidJWTError {
+		diags.AddError("Invalid JWT", fmt.Sprintf("Failed to decode account JWT: %s", protocolErr.err))
+		return
 	}
+	diags.AddError(
+		"Failed to read account claims",
+		fmt.Sprintf("Failed to request account claims for subject %q: %s", protocolErr.subject, err),
+	)
+}
 
-	var ur updateResponse
-	if err := json.Unmarshal(msg.Data, &ur); err != nil {
-		diags.AddError("Response Parse Error", fmt.Sprintf("Failed to parse update response: %s", err))
-		return err
+func addResolverDeleteDiagnostic(diags *diag.Diagnostics, err error) {
+	protocolErr := resolverProtocolError(err)
+	switch protocolErr.kind {
+	case resolverAccountInvalidJWTError:
+		diags.AddError("Invalid JWT", fmt.Sprintf("Failed to decode account JWT: %s", protocolErr.err))
+	case resolverAccountInvalidOperatorSeedError:
+		diags.AddError("Invalid Operator Seed", fmt.Sprintf("Failed to parse operator seed: %s", protocolErr.err))
+	case resolverAccountJWTEncodingError:
+		diags.AddError("JWT Encoding Error", fmt.Sprintf("Failed to encode delete request JWT: %s", protocolErr.err))
+	case resolverAccountRequestError:
+		diags.AddError("NATS Request Error", fmt.Sprintf("Failed to send delete request: %s", protocolErr.err))
+	case resolverAccountResponseParseError:
+		diags.AddError("Response Parse Error", fmt.Sprintf("Failed to parse delete response: %s", protocolErr.err))
+	case resolverAccountServerError:
+		diags.AddError("Delete Failed", fmt.Sprintf("Server returned error (code %d): %s", protocolErr.code, protocolErr.description))
+	default:
+		diags.AddError("Delete Failed", err.Error())
 	}
-	if ur.Error != nil {
-		diags.AddError(
-			"Update Failed",
-			fmt.Sprintf("Server returned error (code %d): %s", ur.Error.Code, ur.Error.Description),
-		)
-		return fmt.Errorf("update failed: %s", ur.Error.Description)
+}
+
+func resolverProtocolError(err error) *resolverAccountError {
+	var protocolErr *resolverAccountError
+	if errors.As(err, &protocolErr) {
+		return protocolErr
 	}
-	return nil
+	return &resolverAccountError{err: err}
 }
