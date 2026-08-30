@@ -2,15 +2,13 @@ package provider
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	schemavalidator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	natsjwt "github.com/nats-io/jwt/v2"
+	"github.com/m3nowak/terraform-provider-natsjwt/internal/issuance"
 	"github.com/nats-io/nkeys"
 )
 
@@ -224,167 +222,64 @@ func (d *UserDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 }
 
 func generateUser(ctx context.Context, data *UserDataSourceModel, diagnostics *diag.Diagnostics) {
-	userKP, err := keypairFromSeed(data.Seed.ValueString())
-	if err != nil {
-		diagnostics.AddError("Invalid User Seed", fmt.Sprintf("Failed to parse user seed: %s", err))
-		return
+	input := issuance.UserInput{
+		Name:                   data.Name.ValueString(),
+		Seed:                   data.Seed.ValueString(),
+		AccountSeed:            data.AccountSeed.ValueString(),
+		IssuerAccount:          optionalString(data.IssuerAccount),
+		Temporal:               temporalInput(data.IssuedAt, data.Expires, data.NotBefore),
+		BearerToken:            optionalBool(data.BearerToken),
+		AllowedConnectionTypes: decodeStringList(ctx, data.AllowedConnectionTypes, diagnostics),
+		SourceNetworks:         decodeStringList(ctx, data.SourceNetworks, diagnostics),
+		Locale:                 optionalString(data.Locale),
+		Tags:                   decodeStringList(ctx, data.Tags, diagnostics),
 	}
-
-	userPub, err := userKP.PublicKey()
-	if err != nil {
-		diagnostics.AddError("Public Key Error", fmt.Sprintf("Failed to get user public key: %s", err))
-		return
-	}
-
-	accountKP, err := keypairFromSeed(data.AccountSeed.ValueString())
-	if err != nil {
-		diagnostics.AddError("Invalid Account Seed", fmt.Sprintf("Failed to parse account seed: %s", err))
-		return
-	}
-
-	claims := natsjwt.NewUserClaims(userPub)
-	claims.Name = data.Name.ValueString()
-	applyTemporalClaimsDefaults(claims.Claims(), data.IssuedAt, data.Expires, data.NotBefore)
-
-	if !data.IssuerAccount.IsNull() {
-		claims.IssuerAccount = data.IssuerAccount.ValueString()
-	}
-
-	// Permissions
 	if !data.Permissions.IsNull() {
 		var perms UserPermissionsModel
 		diagnostics.Append(data.Permissions.As(ctx, &perms, objectAsOptions)...)
-		if diagnostics.HasError() {
-			return
-		}
-
-		var pubAllow, pubDeny, subAllow, subDeny []string
-		if !perms.PubAllow.IsNull() {
-			diagnostics.Append(perms.PubAllow.ElementsAs(ctx, &pubAllow, false)...)
-		}
-		if !perms.PubDeny.IsNull() {
-			diagnostics.Append(perms.PubDeny.ElementsAs(ctx, &pubDeny, false)...)
-		}
-		if !perms.SubAllow.IsNull() {
-			diagnostics.Append(perms.SubAllow.ElementsAs(ctx, &subAllow, false)...)
-		}
-		if !perms.SubDeny.IsNull() {
-			diagnostics.Append(perms.SubDeny.ElementsAs(ctx, &subDeny, false)...)
-		}
-		if diagnostics.HasError() {
-			return
-		}
-
-		claims.Pub = buildPermission(pubAllow, pubDeny)
-		claims.Sub = buildPermission(subAllow, subDeny)
-
-		if !perms.RespMaxMsgs.IsNull() || !perms.RespTTL.IsNull() {
-			claims.Resp = &natsjwt.ResponsePermission{}
-			if !perms.RespMaxMsgs.IsNull() {
-				claims.Resp.MaxMsgs = int(perms.RespMaxMsgs.ValueInt64())
-			}
-			if !perms.RespTTL.IsNull() {
-				ttl, err := time.ParseDuration(perms.RespTTL.ValueString())
-				if err != nil {
-					diagnostics.AddError("Invalid Duration", fmt.Sprintf("Failed to parse resp_ttl: %s", err))
-					return
-				}
-				claims.Resp.Expires = ttl
-			}
+		input.Permissions = &issuance.UserPermissions{
+			Permissions: issuance.Permissions{
+				Publish: issuance.Permission{
+					Allow: decodeStringList(ctx, perms.PubAllow, diagnostics),
+					Deny:  decodeStringList(ctx, perms.PubDeny, diagnostics),
+				},
+				Subscribe: issuance.Permission{
+					Allow: decodeStringList(ctx, perms.SubAllow, diagnostics),
+					Deny:  decodeStringList(ctx, perms.SubDeny, diagnostics),
+				},
+			},
+			ResponseMaxMessages: optionalInt64(perms.RespMaxMsgs),
+			ResponseTTL:         optionalString(perms.RespTTL),
 		}
 	}
-
-	// Limits
 	if !data.Limits.IsNull() {
 		var limits UserLimitsModel
 		diagnostics.Append(data.Limits.As(ctx, &limits, objectAsOptions)...)
-		if diagnostics.HasError() {
-			return
-		}
-		if !limits.Subs.IsNull() {
-			claims.Subs = limits.Subs.ValueInt64()
-		} else {
-			claims.Subs = -1
-		}
-		if !limits.Data.IsNull() {
-			claims.Limits.Data = limits.Data.ValueInt64()
-		} else {
-			claims.Limits.Data = -1
-		}
-		if !limits.Payload.IsNull() {
-			claims.Limits.NatsLimits.Payload = limits.Payload.ValueInt64()
-		} else {
-			claims.Limits.NatsLimits.Payload = -1
+		input.Limits = &issuance.UserLimits{
+			Subscriptions: optionalInt64(limits.Subs),
+			Data:          optionalInt64(limits.Data),
+			Payload:       optionalInt64(limits.Payload),
 		}
 	}
-
-	// Bearer token
-	if !data.BearerToken.IsNull() {
-		claims.BearerToken = data.BearerToken.ValueBool()
-	}
-
-	// Allowed connection types
-	if !data.AllowedConnectionTypes.IsNull() {
-		var connTypes []string
-		diagnostics.Append(data.AllowedConnectionTypes.ElementsAs(ctx, &connTypes, false)...)
-		if diagnostics.HasError() {
-			return
-		}
-		claims.AllowedConnectionTypes = connTypes
-	}
-
-	// Source networks
-	if !data.SourceNetworks.IsNull() {
-		var networks []string
-		diagnostics.Append(data.SourceNetworks.ElementsAs(ctx, &networks, false)...)
-		if diagnostics.HasError() {
-			return
-		}
-		claims.Src = networks
-	}
-
-	// Time restrictions
 	if !data.TimeRestrictions.IsNull() {
 		var timeRanges []TimeRangeModel
 		diagnostics.Append(data.TimeRestrictions.ElementsAs(ctx, &timeRanges, false)...)
-		if diagnostics.HasError() {
-			return
-		}
 		for _, tr := range timeRanges {
-			claims.Times = append(claims.Times, natsjwt.TimeRange{
+			input.TimeRestrictions = append(input.TimeRestrictions, issuance.TimeRange{
 				Start: tr.Start.ValueString(),
 				End:   tr.End.ValueString(),
 			})
 		}
 	}
-
-	// Locale
-	if !data.Locale.IsNull() {
-		claims.Locale = data.Locale.ValueString()
-	}
-
-	// Tags
-	if !data.Tags.IsNull() {
-		var tags []string
-		diagnostics.Append(data.Tags.ElementsAs(ctx, &tags, false)...)
-		if diagnostics.HasError() {
-			return
-		}
-		claims.Tags = tags
-	}
-
-	jwtString, err := encodeDeterministic(claims, accountKP)
-	if err != nil {
-		diagnostics.AddError("JWT Encoding Error", fmt.Sprintf("Failed to encode user JWT: %s", err))
+	if diagnostics.HasError() {
 		return
 	}
-	credsBytes, err := natsjwt.FormatUserConfig(jwtString, []byte(data.Seed.ValueString()))
+	artifacts, err := issuance.IssueUser(input)
 	if err != nil {
-		diagnostics.AddError("Credentials Encoding Error", fmt.Sprintf("Failed to encode user credentials: %s", err))
+		diagnostics.AddError("JWT Issuance Error", err.Error())
 		return
 	}
-
-	data.PublicKey = types.StringValue(userPub)
-	data.JWT = types.StringValue(jwtString)
-	data.Creds = types.StringValue(string(credsBytes))
+	data.PublicKey = types.StringValue(artifacts.PublicKey)
+	data.JWT = types.StringValue(artifacts.JWT)
+	data.Creds = types.StringValue(artifacts.Creds)
 }

@@ -2,14 +2,13 @@ package provider
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	natsjwt "github.com/nats-io/jwt/v2"
+	"github.com/m3nowak/terraform-provider-natsjwt/internal/issuance"
 	"github.com/nats-io/nkeys"
 )
 
@@ -119,69 +118,25 @@ func (d *OperatorDataSource) Read(ctx context.Context, req datasource.ReadReques
 }
 
 func generateOperator(ctx context.Context, data *OperatorDataSourceModel, diagnostics *diag.Diagnostics) {
-	kp, err := keypairFromSeed(data.Seed.ValueString())
-	if err != nil {
-		diagnostics.AddError("Invalid Seed", fmt.Sprintf("Failed to parse operator seed: %s", err))
+	input := issuance.OperatorInput{
+		Name:                  data.Name.ValueString(),
+		Seed:                  data.Seed.ValueString(),
+		SigningKeys:           decodeStringList(ctx, data.SigningKeys, diagnostics),
+		AccountServerURL:      optionalString(data.AccountServerURL),
+		OperatorServiceURLs:   decodeStringList(ctx, data.OperatorServiceURLs, diagnostics),
+		SystemAccount:         optionalString(data.SystemAccount),
+		StrictSigningKeyUsage: optionalBool(data.StrictSigningKeyUsage),
+		Temporal:              temporalInput(data.IssuedAt, data.Expires, data.NotBefore),
+		Tags:                  decodeStringList(ctx, data.Tags, diagnostics),
+	}
+	if diagnostics.HasError() {
 		return
 	}
-
-	pub, err := kp.PublicKey()
+	artifacts, err := issuance.IssueOperator(input)
 	if err != nil {
-		diagnostics.AddError("Public Key Error", fmt.Sprintf("Failed to get public key: %s", err))
+		diagnostics.AddError("JWT Issuance Error", err.Error())
 		return
 	}
-
-	claims := natsjwt.NewOperatorClaims(pub)
-	claims.Name = data.Name.ValueString()
-
-	if !data.SigningKeys.IsNull() {
-		var signingKeys []string
-		diagnostics.Append(data.SigningKeys.ElementsAs(ctx, &signingKeys, false)...)
-		if diagnostics.HasError() {
-			return
-		}
-		for _, sk := range signingKeys {
-			claims.SigningKeys.Add(sk)
-		}
-	}
-
-	if !data.AccountServerURL.IsNull() {
-		claims.AccountServerURL = data.AccountServerURL.ValueString()
-	}
-
-	if !data.OperatorServiceURLs.IsNull() {
-		var urls []string
-		diagnostics.Append(data.OperatorServiceURLs.ElementsAs(ctx, &urls, false)...)
-		if diagnostics.HasError() {
-			return
-		}
-		claims.OperatorServiceURLs = urls
-	}
-
-	if !data.SystemAccount.IsNull() {
-		claims.SystemAccount = data.SystemAccount.ValueString()
-	}
-
-	if !data.StrictSigningKeyUsage.IsNull() {
-		claims.StrictSigningKeyUsage = data.StrictSigningKeyUsage.ValueBool()
-	}
-	applyTemporalClaimsDefaults(claims.Claims(), data.IssuedAt, data.Expires, data.NotBefore)
-
-	if !data.Tags.IsNull() {
-		var tags []string
-		diagnostics.Append(data.Tags.ElementsAs(ctx, &tags, false)...)
-		if diagnostics.HasError() {
-			return
-		}
-		claims.Tags = tags
-	}
-
-	jwtString, err := encodeDeterministic(claims, kp)
-	if err != nil {
-		diagnostics.AddError("JWT Encoding Error", fmt.Sprintf("Failed to encode operator JWT: %s", err))
-		return
-	}
-
-	data.PublicKey = types.StringValue(pub)
-	data.JWT = types.StringValue(jwtString)
+	data.PublicKey = types.StringValue(artifacts.PublicKey)
+	data.JWT = types.StringValue(artifacts.JWT)
 }

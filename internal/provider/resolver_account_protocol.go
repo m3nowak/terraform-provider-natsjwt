@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/m3nowak/terraform-provider-natsjwt/internal/issuance"
 	natsjwt "github.com/nats-io/jwt/v2"
 	"github.com/nats-io/nats.go"
 )
@@ -133,7 +134,7 @@ func (p resolverAccountProtocol) Delete(jwtStr, operatorSeed string) error {
 
 	deleteClaims := natsjwt.NewGenericClaims(operatorPublicKey)
 	deleteClaims.Data = map[string]interface{}{"accounts": []string{claims.Subject}}
-	deleteJWT, err := encodeDeterministic(deleteClaims, operatorKP)
+	deleteJWT, err := issuance.EncodeDeterministic(deleteClaims, operatorKP)
 	if err != nil {
 		return &resolverAccountError{kind: resolverAccountJWTEncodingError, err: err}
 	}
