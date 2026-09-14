@@ -2,7 +2,7 @@ terraform {
   required_providers {
     natsjwt = {
       source  = "m3nowak/natsjwt"
-      version = "~> 0.1"
+      version = ">= 0.0.7"
     }
     local = {
       source  = "hashicorp/local"
