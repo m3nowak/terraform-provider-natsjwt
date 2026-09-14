@@ -23,8 +23,8 @@ data "natsjwt_operator" "main" {
 
 - `name` - (Required) Account name. Typically `SYS` for the system account.
 - `seed` - (Required, sensitive) Account seed (private key).
-- `operator_seed` - (Required, sensitive) Operator seed for signing.
-- `signing_keys` - (Optional) List of signing key public keys.
+- `operator_seed` - (Required, sensitive) Operator identity seed used to sign the JWT (starts with `SO`). Operator signing keys (account nkeys) are rejected.
+- `signing_keys` - (Optional) Public keys listed as extra signing keys on the account JWT. This provider does not sign user JWTs with them.
 - `issued_at` - (Optional) JWT issued-at Unix timestamp. Defaults to `0` (Unix epoch).
 - `expires` - (Optional) JWT expiration Unix timestamp. Defaults to no expiration.
 - `not_before` - (Optional) JWT not-before Unix timestamp. Defaults to `issued_at`.
@@ -42,8 +42,8 @@ data "natsjwt_operator" "main" {
 
 ### Account Limits
 
-- `imports` - (Optional) Maximum number of imports.
-- `exports` - (Optional) Maximum number of exports.
+- `imports` - (Optional) Maximum number of imports (count limit, not import subject definitions).
+- `exports` - (Optional) Maximum number of exports (count limit, not export subject definitions).
 - `wildcard_exports` - (Optional) Allow wildcard exports.
 - `disallow_bearer` - (Optional) Disallow bearer tokens.
 - `conn` - (Optional) Maximum connections.
@@ -81,3 +81,5 @@ The `natsjwt_system_account` data source includes default `$SYS` exports, which 
 
 - The system account is required in operator configuration for full NATS server functionality
 - Changing any argument will result in a new JWT being generated
+- Signed with the operator identity seed (`SO`). Operator signing keys are not accepted.
+- Default `$SYS` exports are the only export subjects this provider writes. `account_limits.exports` is a count cap, not a subject list.

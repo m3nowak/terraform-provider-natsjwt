@@ -82,12 +82,12 @@ func (d *UserDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r
 			"account_seed": schema.StringAttribute{
 				Required:    true,
 				Sensitive:   true,
-				Description: "Account or signing key seed used to sign the user JWT (starts with SA).",
+				Description: "Account identity seed used to sign the user JWT (starts with SA). Account signing keys (user nkeys) are not accepted.",
 				Validators:  []schemavalidator.String{SeedTypeValidator(nkeys.PrefixByteAccount)},
 			},
 			"issuer_account": schema.StringAttribute{
 				Optional:    true,
-				Description: "Account public key. Set this when using a signing key instead of the account key directly.",
+				Description: "Account public key copied into the JWT as issuer_account. Does not change the signer; account_seed must still be the account identity seed (SA).",
 			},
 			"issued_at": schema.Int64Attribute{
 				Optional:    true,

@@ -16,8 +16,8 @@ The generated claims include the default NATS system-account monitoring service 
 
 - `name` - (Required) System account name, typically `SYS`.
 - `seed` - (Required, sensitive) Account seed (private key, starts with `SA`).
-- `operator_seed` - (Required, sensitive) Operator seed used to sign the JWT (starts with `SO`).
-- `signing_keys` - (Optional) List of additional signing key public keys.
+- `operator_seed` - (Required, sensitive) Operator identity seed used to sign the JWT (starts with `SO`). Operator signing keys (account nkeys) are rejected.
+- `signing_keys` - (Optional) Public keys listed as extra signing keys on the account JWT. This provider does not sign user JWTs with them.
 - `issued_at` - (Optional) JWT issued-at Unix timestamp. Defaults to `0`.
 - `expires` - (Optional) JWT expiration Unix timestamp. Defaults to no expiration.
 - `not_before` - (Optional) JWT not-before Unix timestamp. Defaults to `issued_at`.
@@ -38,8 +38,8 @@ The generated claims include the default NATS system-account monitoring service 
 
 ### Account Limits
 
-- `imports` - (Optional) Maximum imports. `-1` means unlimited.
-- `exports` - (Optional) Maximum exports. `-1` means unlimited.
+- `imports` - (Optional) Maximum imports as a count. `-1` means unlimited. This is not an import subject list.
+- `exports` - (Optional) Maximum exports as a count. `-1` means unlimited. This is not an export subject list.
 - `wildcard_exports` - (Optional) Allow wildcard exports. Defaults to `true`.
 - `disallow_bearer` - (Optional) Disallow bearer tokens. Defaults to `false`.
 - `conn` - (Optional) Maximum connections. `-1` means unlimited.
@@ -75,3 +75,5 @@ The generated claims include the default NATS system-account monitoring service 
 - `jwt` - Signed system account JWT, including default system exports.
 
 Ephemeral results can only be consumed by other ephemeral contexts, provider configuration, provisioners, or write-only resource arguments.
+
+Signed with the operator identity seed (`SO`). Default `$SYS` exports are the only export subjects this provider writes.
