@@ -57,7 +57,7 @@ func (d *OperatorDataSource) Schema(_ context.Context, _ datasource.SchemaReques
 			"signing_keys": schema.ListAttribute{
 				ElementType: types.StringType,
 				Optional:    true,
-				Description: "Additional signing key public keys.",
+				Description: "Public keys listed as extra signing keys on the operator JWT. This provider does not sign account JWTs with them.",
 			},
 			"account_server_url": schema.StringAttribute{
 				Optional:    true,
@@ -74,7 +74,7 @@ func (d *OperatorDataSource) Schema(_ context.Context, _ datasource.SchemaReques
 			},
 			"strict_signing_key_usage": schema.BoolAttribute{
 				Optional:    true,
-				Description: "Require signing keys for all operations.",
+				Description: "When true, the operator JWT requires signing keys for account operations. This provider still signs account JWTs with the operator identity seed.",
 			},
 			"issued_at": schema.Int64Attribute{
 				Optional:    true,

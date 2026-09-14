@@ -1,19 +1,19 @@
 # NATS JWT Provider
 
-A Terraform provider for managing [NATS](https://nats.io/) JWT credentials offline — no running NATS server required.
+A Terraform provider for managing [NATS](https://nats.io/) JWT credentials offline. Issuance does not need a running NATS server.
 
-This provider is a Terraform-native replacement for the [`nsc`](https://github.com/nats-io/nsc) command-line tool, enabling you to manage operators, accounts, users, and server configuration as code.
+It covers the [`nsc`](https://github.com/nats-io/nsc) happy path: operator, account, user, and server config as Terraform. It is not a drop-in nsc replacement. See [Known limitations](#known-limitations).
 
 ## Features
 
-- **Offline operation** — generates NKeys and signed JWTs without connecting to a NATS server
-- **Deterministic JWTs** — same inputs always produce the same JWT output (stable `terraform plan`)
-- **Full JWT support** — operators, accounts (with JetStream limits), system accounts, and users
-- **Server config generation** — produces NATS server configuration snippet
-- **Seed validation** — validates that the correct key type is used for each operation
-- **External seed support** — use NKeys from external sources (e.g., HashiCorp Vault) or generate them with the provider
-- **Ephemeral credentials** — generate operator, account, system-account, and user JWT values without writing seeds or results to plan or state
-- **Seed conversion function** — convert a seed to a public key with `provider::natsjwt::seed_public_key(...)`
+- **Offline issuance.** Generates NKeys and signed JWTs without connecting to a NATS server.
+- **Deterministic JWTs.** Same inputs produce the same JWT, so `terraform plan` stays quiet.
+- **Operators, accounts, users.** JetStream limits on accounts. A separate system-account data source with default `$SYS` exports.
+- **Server config.** Builds a NATS config snippet (`operator`, `system_account`, `resolver_preload`).
+- **Seed type checks.** Rejects the wrong nkey prefix for each operation.
+- **External seeds.** Pass seeds from Vault or similar, or generate them with `natsjwt_nkey`.
+- **Ephemeral credentials.** With Terraform 1.10+, issue JWTs without writing seeds or results to plan or state.
+- **Seed conversion.** `provider::natsjwt::seed_public_key(...)` derives a public key from a seed.
 
 ## Example Usage
 
@@ -22,7 +22,7 @@ terraform {
   required_providers {
     natsjwt = {
       source  = "m3nowak/natsjwt"
-      version = "~> 0.0"
+      version = "~> 0.1"
     }
   }
 }
@@ -167,6 +167,14 @@ If `operator_seed` is omitted, Terraform will emit a warning during destroy and 
 - Consider using external seed management for production setups
 
 See the [ephemeral resource guide](ephemeral-resources/natsjwt_user.md) for usage and migration details. Existing data sources remain available when persisted outputs are required.
+
+## Known Limitations
+
+**Signing keys are listed, not used.** `signing_keys` on operator and account JWTs is a public-key list. This provider still signs with the identity seed. `operator_seed` must be an operator seed (`SO`). `account_seed` must be an account seed (`SA`). In NATS, an operator signing key is an account nkey (`SA`/`A`) and an account signing key is a user nkey (`SU`/`U`). Those seeds are rejected. `issuer_account` is copied into the user JWT. It does not change the signer.
+
+Do not set `strict_signing_key_usage = true` unless something else will sign account JWTs. NATS will then reject accounts signed with the operator identity key, which is the only signer this provider has.
+
+**Import and export subjects are missing.** `account_limits.imports` and `account_limits.exports` are numeric caps. There is no way to declare stream or service import/export subjects on an account. Subject mappings and revocations are also absent.
 
 ## Compatibility
 

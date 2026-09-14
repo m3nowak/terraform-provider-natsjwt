@@ -111,13 +111,13 @@ func accountSchemaAttributes() map[string]schema.Attribute {
 		"operator_seed": schema.StringAttribute{
 			Required:    true,
 			Sensitive:   true,
-			Description: "Operator or signing key seed used to sign the account JWT (starts with SO).",
+			Description: "Operator identity seed used to sign the account JWT (starts with SO). Operator signing keys (account nkeys) are not accepted.",
 			Validators:  []schemavalidator.String{SeedTypeValidator(nkeys.PrefixByteOperator)},
 		},
 		"signing_keys": schema.ListAttribute{
 			ElementType: types.StringType,
 			Optional:    true,
-			Description: "Additional signing key public keys for this account.",
+			Description: "Public keys listed as extra signing keys on the account JWT. This provider does not sign user JWTs with them.",
 		},
 		"issued_at": schema.Int64Attribute{
 			Optional:    true,
@@ -168,11 +168,11 @@ func accountSchemaAttributes() map[string]schema.Attribute {
 			Attributes: map[string]schema.Attribute{
 				"imports": schema.Int64Attribute{
 					Optional:    true,
-					Description: "Maximum imports. -1 for unlimited.",
+					Description: "Maximum number of imports. -1 for unlimited. Count limit only, not import subject definitions.",
 				},
 				"exports": schema.Int64Attribute{
 					Optional:    true,
-					Description: "Maximum exports. -1 for unlimited.",
+					Description: "Maximum number of exports. -1 for unlimited. Count limit only, not export subject definitions.",
 				},
 				"wildcard_exports": schema.BoolAttribute{
 					Optional:    true,

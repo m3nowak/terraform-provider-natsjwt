@@ -22,8 +22,8 @@ ephemeral "natsjwt_user" "app" {
 
 - `name` - (Required) User name.
 - `seed` - (Required, sensitive) User seed (private key, starts with `SU`).
-- `account_seed` - (Required, sensitive) Account seed used to sign the JWT (starts with `SA`).
-- `issuer_account` - (Optional) Account public key. Set when `account_seed` belongs to a signing key rather than the account key.
+- `account_seed` - (Required, sensitive) Account identity seed used to sign the JWT (starts with `SA`). Account signing keys (user nkeys) are rejected.
+- `issuer_account` - (Optional) Account public key copied into the JWT. Does not change the signer; `account_seed` must still be the account identity seed.
 - `issued_at` - (Optional) JWT issued-at Unix timestamp. Defaults to `0`.
 - `expires` - (Optional) JWT expiration Unix timestamp. Defaults to no expiration.
 - `not_before` - (Optional) JWT not-before Unix timestamp. Defaults to `issued_at`.
@@ -63,3 +63,5 @@ ephemeral "natsjwt_user" "app" {
 - `creds` - Sensitive NATS `.creds` content containing the JWT and private user seed.
 
 Marking a value sensitive only redacts its display. Using this ephemeral resource is what prevents its configuration and results from being persisted by Terraform. Existing data sources remain appropriate when downstream configuration requires values stored in state.
+
+User JWTs are signed with the account identity seed (`SA`). `issuer_account` does not switch the signer.

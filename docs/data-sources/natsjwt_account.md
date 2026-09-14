@@ -66,8 +66,8 @@ data "natsjwt_account" "with_permissions" {
 
 - `name` - (Required) Account name.
 - `seed` - (Required, sensitive) Account seed (private key).
-- `operator_seed` - (Required, sensitive) Operator seed for signing.
-- `signing_keys` - (Optional) List of signing key public keys.
+- `operator_seed` - (Required, sensitive) Operator identity seed used to sign the JWT (starts with `SO`). Operator signing keys (account nkeys) are rejected.
+- `signing_keys` - (Optional) Public keys listed as extra signing keys on the account JWT. This provider does not sign user JWTs with them.
 - `issued_at` - (Optional) JWT issued-at Unix timestamp. Defaults to `0` (Unix epoch).
 - `expires` - (Optional) JWT expiration Unix timestamp. Defaults to no expiration.
 - `not_before` - (Optional) JWT not-before Unix timestamp. Defaults to `issued_at`.
@@ -85,8 +85,8 @@ data "natsjwt_account" "with_permissions" {
 
 ### Account Limits
 
-- `imports` - (Optional) Maximum number of imports.
-- `exports` - (Optional) Maximum number of exports.
+- `imports` - (Optional) Maximum number of imports (count limit, not import subject definitions).
+- `exports` - (Optional) Maximum number of exports (count limit, not export subject definitions).
 - `wildcard_exports` - (Optional) Allow wildcard exports.
 - `disallow_bearer` - (Optional) Disallow bearer tokens.
 - `conn` - (Optional) Maximum connections.
@@ -118,6 +118,7 @@ data "natsjwt_account" "with_permissions" {
 
 ## Notes
 
-- Accounts must be signed with the operator's seed
+- Accounts are signed with the operator identity seed (`SO`). Operator signing keys are not accepted.
+- `account_limits.imports` and `account_limits.exports` are numeric caps. Stream and service import/export subjects cannot be declared.
 - JetStream limits are optional; if not specified, JetStream is disabled
 - Default permissions are inherited by users in the account

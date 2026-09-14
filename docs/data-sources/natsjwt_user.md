@@ -86,8 +86,8 @@ data "natsjwt_user" "expired_demo" {
 
 - `name` - (Required) User name.
 - `seed` - (Required, sensitive) User seed (private key).
-- `account_seed` - (Required, sensitive) Account seed for signing.
-- `issuer_account` - (Optional) Account public key (when using a signing key).
+- `account_seed` - (Required, sensitive) Account identity seed used to sign the JWT (starts with `SA`). Account signing keys (user nkeys) are rejected.
+- `issuer_account` - (Optional) Account public key copied into the JWT. Does not change the signer; `account_seed` must still be the account identity seed.
 - `issued_at` - (Optional) JWT issued-at Unix timestamp. Defaults to `0` (Unix epoch).
 - `expires` - (Optional) JWT expiration Unix timestamp. Defaults to no expiration.
 - `not_before` - (Optional) JWT not-before Unix timestamp. Defaults to `issued_at`.
@@ -126,6 +126,7 @@ data "natsjwt_user" "expired_demo" {
 ## Notes
 
 - Users inherit default permissions from their account if user-specific permissions are not set
+- User JWTs are signed with the account identity seed (`SA`). Account signing keys are not accepted.
 - Connection type restrictions allow fine-grained control over connection protocols
 - Source network restrictions are enforced at the NATS server level
 - Time restrictions require a valid locale to be set
