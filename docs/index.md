@@ -178,7 +178,7 @@ Do not set `strict_signing_key_usage = true` unless something else will sign acc
 
 ## Compatibility
 
-- NATS 2.11 and 2.12
+- NATS 2.11, 2.12, and 2.14
 - Terraform >= 1.0 for regular resources and data sources; Terraform >= 1.10 for ephemeral resources
 - Go 1.25 and 1.26
 - Uses `github.com/nats-io/jwt/v2` and `github.com/nats-io/nkeys`
